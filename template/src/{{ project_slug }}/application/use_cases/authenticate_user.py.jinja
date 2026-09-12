@@ -1,0 +1,21 @@
+from ...domain.entities.user import User
+from ...domain.exceptions import InvalidCredentialsError
+from ...domain.interfaces.password_hasher import PasswordHasher
+from ...domain.interfaces.user_repository import UserRepository
+
+
+class AuthenticateUser:
+    """Verifies email/password. Message is generic to avoid account enumeration.
+
+    >>> # AuthenticateUser(users, hasher).execute("a@b.com", "x")  # doctest: +SKIP
+    """
+
+    def __init__(self, users: UserRepository, hasher: PasswordHasher) -> None:
+        self._users = users
+        self._hasher = hasher
+
+    {% if async_mode == "async" %}async {% endif %}def execute(self, email: str, password: str) -> User:
+        user = {% if async_mode == "async" %}await {% endif %}self._users.get_by_email(email)
+        if user is None or not self._hasher.verify(password, user.hashed_password):
+            raise InvalidCredentialsError()
+        return user

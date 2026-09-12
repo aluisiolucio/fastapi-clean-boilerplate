@@ -1,0 +1,35 @@
+from uuid import UUID
+
+from ...domain.entities.auth_tokens import AuthTokens
+from ...domain.interfaces.refresh_token_generator import RefreshTokenGenerator
+from ...domain.interfaces.refresh_token_repository import RefreshTokenRepository
+from ...domain.interfaces.token_service import TokenService
+
+
+class IssueAuthTokens:
+    """Issues an access JWT and persists a new refresh token.
+
+    >>> # IssueAuthTokens(...).execute(user_id)  # doctest: +SKIP
+    """
+
+    def __init__(
+        self,
+        tokens: TokenService,
+        refresh_generator: RefreshTokenGenerator,
+        refresh_tokens: RefreshTokenRepository,
+        access_expire_seconds: int,
+    ) -> None:
+        self._tokens = tokens
+        self._refresh_generator = refresh_generator
+        self._refresh_tokens = refresh_tokens
+        self._access_expire_seconds = access_expire_seconds
+
+    {% if async_mode == "async" %}async {% endif %}def execute(self, user_id: UUID) -> AuthTokens:
+        generated = self._refresh_generator.generate(user_id)
+        {% if async_mode == "async" %}await {% endif %}self._refresh_tokens.add(generated.entity)
+        return AuthTokens(
+            access_token=self._tokens.encode_access_token(user_id),
+            refresh_token=generated.plaintext,
+            refresh_token_id=generated.entity.id,
+            expires_in=self._access_expire_seconds,
+        )

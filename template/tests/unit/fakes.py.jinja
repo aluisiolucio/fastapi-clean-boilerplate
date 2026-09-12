@@ -1,0 +1,118 @@
+from datetime import UTC, datetime, timedelta
+from uuid import UUID, uuid4
+
+from {{ project_slug }}.domain.entities.auth_tokens import GeneratedRefreshToken
+from {{ project_slug }}.domain.entities.item import Item
+from {{ project_slug }}.domain.entities.refresh_token import RefreshToken
+from {{ project_slug }}.domain.entities.user import User
+from {{ project_slug }}.domain.exceptions import InvalidTokenError
+
+
+class InMemoryItemRepository:
+    def __init__(self) -> None:
+        self._items: dict[UUID, Item] = {}
+
+    {% if async_mode == "async" %}async {% endif %}def add(self, item: Item) -> Item:
+        self._items[item.id] = item
+        return item
+
+    {% if async_mode == "async" %}async {% endif %}def get_by_id(self, item_id: UUID) -> Item | None:
+        return self._items.get(item_id)
+
+    {% if async_mode == "async" %}async {% endif %}def list_all(self) -> list[Item]:
+        return list(self._items.values())
+
+    {% if async_mode == "async" %}async {% endif %}def update(self, item: Item) -> Item:
+        self._items[item.id] = item
+        return item
+
+    {% if async_mode == "async" %}async {% endif %}def delete(self, item_id: UUID) -> None:
+        self._items.pop(item_id, None)
+
+
+class InMemoryUserRepository:
+    def __init__(self) -> None:
+        self._by_id: dict[UUID, User] = {}
+        self._by_email: dict[str, User] = {}
+
+    {% if async_mode == "async" %}async {% endif %}def add(self, user: User) -> User:
+        self._by_id[user.id] = user
+        self._by_email[user.email] = user
+        return user
+
+    {% if async_mode == "async" %}async {% endif %}def get_by_id(self, user_id: UUID) -> User | None:
+        return self._by_id.get(user_id)
+
+    {% if async_mode == "async" %}async {% endif %}def get_by_email(self, email: str) -> User | None:
+        return self._by_email.get(email)
+
+
+class InMemoryRefreshTokenRepository:
+    def __init__(self) -> None:
+        self._by_id: dict[UUID, RefreshToken] = {}
+        self._by_hash: dict[str, RefreshToken] = {}
+
+    {% if async_mode == "async" %}async {% endif %}def add(self, token: RefreshToken) -> RefreshToken:
+        self._by_id[token.id] = token
+        self._by_hash[token.token_hash] = token
+        return token
+
+    {% if async_mode == "async" %}async {% endif %}def get_by_hash(self, token_hash: str) -> RefreshToken | None:
+        return self._by_hash.get(token_hash)
+
+    {% if async_mode == "async" %}async {% endif %}def update(self, token: RefreshToken) -> RefreshToken:
+        old = self._by_id[token.id]
+        self._by_hash.pop(old.token_hash, None)
+        self._by_id[token.id] = token
+        self._by_hash[token.token_hash] = token
+        return token
+
+    {% if async_mode == "async" %}async {% endif %}def revoke_all_for_user(self, user_id: UUID) -> None:
+        for token in list(self._by_id.values()):
+            if token.user_id == user_id and not token.is_revoked():
+                revoked = token.revoke()
+                self._by_id[revoked.id] = revoked
+                self._by_hash[revoked.token_hash] = revoked
+
+
+class FakePasswordHasher:
+    def hash(self, password: str) -> str:
+        return f"hashed:{password}"
+
+    def verify(self, password: str, hashed: str) -> bool:
+        return hashed == f"hashed:{password}"
+
+
+class FakeTokenService:
+    def encode_access_token(self, user_id: UUID) -> str:
+        return f"access:{user_id}"
+
+    def decode_access_token(self, token: str) -> UUID:
+        prefix = "access:"
+        if not token.startswith(prefix):
+            raise InvalidTokenError()
+        return UUID(token.removeprefix(prefix))
+
+
+class FakeTokenHasher:
+    def hash(self, raw_token: str) -> str:
+        return f"hash:{raw_token}"
+
+
+class FakeRefreshTokenGenerator:
+    def __init__(self, hasher: FakeTokenHasher) -> None:
+        self._hasher = hasher
+        self._n = 0
+
+    def generate(self, user_id: UUID) -> GeneratedRefreshToken:
+        self._n += 1
+        plaintext = f"refresh-token-{self._n}"
+        entity = RefreshToken(
+            id=uuid4(),
+            user_id=user_id,
+            token_hash=self._hasher.hash(plaintext),
+            expires_at=datetime.now(UTC) + timedelta(days=7),
+            revoked_at=None,
+            replaced_by_id=None,
+        )
+        return GeneratedRefreshToken(plaintext=plaintext, entity=entity)

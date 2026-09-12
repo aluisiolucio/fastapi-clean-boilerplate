@@ -1,0 +1,15 @@
+from ...domain.entities.item import Item
+from ...domain.interfaces.item_repository import ItemRepository
+
+
+class ListItems:
+    """Returns every stored item.
+
+    >>> # ListItems(repo).execute()  # doctest: +SKIP
+    """
+
+    def __init__(self, repository: ItemRepository) -> None:
+        self._repository = repository
+
+    {% if async_mode == "async" %}async {% endif %}def execute(self) -> list[Item]:
+        return {% if async_mode == "async" %}await {% endif %}self._repository.list_all()

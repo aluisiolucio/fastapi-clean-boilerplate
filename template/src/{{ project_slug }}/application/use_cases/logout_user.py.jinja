@@ -1,0 +1,22 @@
+from ...domain.interfaces.refresh_token_repository import RefreshTokenRepository
+from ...domain.interfaces.token_hasher import TokenHasher
+
+
+class LogoutUser:
+    """Revokes a refresh token. Missing or already-revoked tokens are a no-op.
+
+    >>> # LogoutUser(hasher, repo).execute(raw_refresh)  # doctest: +SKIP
+    """
+
+    def __init__(
+        self, hasher: TokenHasher, refresh_tokens: RefreshTokenRepository
+    ) -> None:
+        self._hasher = hasher
+        self._refresh_tokens = refresh_tokens
+
+    {% if async_mode == "async" %}async {% endif %}def execute(self, raw_refresh: str) -> None:
+        token_hash = self._hasher.hash(raw_refresh)
+        stored = {% if async_mode == "async" %}await {% endif %}self._refresh_tokens.get_by_hash(token_hash)
+        if stored is None or stored.is_revoked():
+            return
+        {% if async_mode == "async" %}await {% endif %}self._refresh_tokens.update(stored.revoke())

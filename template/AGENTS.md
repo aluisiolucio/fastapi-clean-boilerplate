@@ -1,0 +1,70 @@
+# AGENTS.md
+
+## Estilo de código
+
+- Funções: 4 a 20 linhas. Divida se passar disso.
+- Arquivos: até 500 linhas. Divida por responsabilidade.
+- Uma coisa por função, uma responsabilidade por módulo (SRP).
+- Nomes: específicos e únicos. Evite `data`, `handler`, `manager`.
+  Prefira nomes que retornem menos de 5 ocorrências num grep no repositório.
+- Tipos: explícitos, checados com `ty`. Nada de `Any`, `dict`/`list` sem tipar o
+  conteúdo, ou função sem type hints.
+- Sem duplicação de código. Extraia lógica compartilhada para uma função/módulo.
+- Prefira *early return* a ifs aninhados. Máximo de 2 níveis de indentação.
+- Mensagens de exceção devem incluir o valor problemático e o formato esperado.
+  Não inclua secrets, senhas ou tokens completos.
+
+## Comentários
+
+- Mantenha os comentários já existentes. Não remova em refatorações — eles carregam
+  intenção e histórico.
+- Escreva o PORQUÊ, não o QUÊ. Evite `# incrementa o contador` acima de `i += 1`.
+- Docstrings em funções/métodos públicos: intenção + um exemplo de uso.
+- Referencie número de issue / SHA de commit quando uma linha existir por causa de um
+  bug específico ou de uma restrição externa.
+
+## Testes
+
+- Testes: `uv run poe test` (ou `uv run pytest`). Unitários: `uv run poe test-unit`.
+- Integração usa **testcontainers** (`PostgresContainer`, `driver="psycopg"` — nunca
+  o default `psycopg2`). Requer Docker.
+- Toda função nova ganha um teste. Correção de bug ganha teste de regressão.
+- Mocke I/O externo (banco, filesystem, HTTP) com classes fake nomeadas — os
+  `Protocol`s de `domain/interfaces/` existem justamente para isso — nunca com stubs
+  inline.
+- Testes devem ser F.I.R.S.T: rápidos, independentes, repetíveis, auto-verificáveis e
+  feitos a tempo.
+- Na variação síncrona, use `TestClient` do FastAPI; na assíncrona, `httpx.AsyncClient`
+  + `pytest-asyncio`.
+
+## Dependências
+
+- Injete dependências via construtor/parâmetro, usando `Depends()` do FastAPI — nunca
+  por import global.
+- Envolva bibliotecas de terceiros atrás de uma interface fina de propriedade do
+  projeto: no boilerplate, isso é exatamente o papel dos `Protocol`s em
+  `domain/interfaces/`, implementados em `infrastructure/`.
+- Autenticação: access JWT (`TokenService`) + refresh opaco persistido
+  (`RefreshTokenRepository`, hash SHA-256). Rotação no refresh; reuso revoga a família.
+
+## Estrutura
+
+- Siga a Clean Architecture do projeto: `domain` → `application` → `adapters` →
+  `infrastructure`. Não misture responsabilidades entre camadas — `domain` não importa
+  nada de fora, `application` só conhece `domain` e seus `Protocol`s, `adapters` chama
+  `application`, `infrastructure` implementa os `Protocol`s.
+- Prefira módulos pequenos e focados a arquivos "deus".
+- Caminhos previsíveis: `domain/entities`, `domain/interfaces`,
+  `application/use_cases`, `adapters/api/v1`, `infrastructure/database`,
+  `infrastructure/config`, `infrastructure/logging`, `infrastructure/auth`.
+
+## Formatação
+
+- Use o formatter padrão do projeto: `ruff format` (lint com `ruff check --fix`).
+  Tarefas: `uv run poe lint` / `uv run poe format`. Não discuta estilo além disso.
+- Typecheck: `uv run poe typecheck` (`ty`).
+
+## Logging
+
+- JSON estruturado ao logar para debug/observabilidade, via `structlog`.
+- Texto plano só em saída de CLI voltada ao usuário (ex: mensagens das tarefas Poe).

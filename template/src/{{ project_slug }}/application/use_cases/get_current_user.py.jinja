@@ -1,0 +1,22 @@
+from ...domain.entities.user import User
+from ...domain.exceptions import InvalidTokenError
+from ...domain.interfaces.token_service import TokenService
+from ...domain.interfaces.user_repository import UserRepository
+
+
+class GetCurrentUser:
+    """Resolves the user encoded in an access JWT.
+
+    >>> # GetCurrentUser(users, tokens).execute(access_token)  # doctest: +SKIP
+    """
+
+    def __init__(self, users: UserRepository, tokens: TokenService) -> None:
+        self._users = users
+        self._tokens = tokens
+
+    {% if async_mode == "async" %}async {% endif %}def execute(self, access_token: str) -> User:
+        user_id = self._tokens.decode_access_token(access_token)
+        user = {% if async_mode == "async" %}await {% endif %}self._users.get_by_id(user_id)
+        if user is None:
+            raise InvalidTokenError()
+        return user

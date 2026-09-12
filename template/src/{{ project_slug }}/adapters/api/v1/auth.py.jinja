@@ -1,0 +1,82 @@
+from typing import Annotated
+
+from fastapi import APIRouter, Depends
+from fastapi.security import OAuth2PasswordRequestForm
+
+from ....application.use_cases.authenticate_user import AuthenticateUser
+from ....application.use_cases.issue_auth_tokens import IssueAuthTokens
+from ....application.use_cases.logout_user import LogoutUser
+from ....application.use_cases.refresh_auth_tokens import RefreshAuthTokens
+from ....application.use_cases.register_user import RegisterUser
+from ....domain.entities.auth_tokens import AuthTokens
+from ....domain.entities.user import User
+from ..deps import (
+    get_authenticate_user,
+    get_current_user,
+    get_issue_auth_tokens,
+    get_logout_user,
+    get_refresh_auth_tokens,
+    get_register_user,
+)
+from .schemas.auth import (
+    LogoutRequest,
+    RefreshRequest,
+    RegisterRequest,
+    TokenResponse,
+    UserResponse,
+)
+
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _to_token_response(tokens: AuthTokens) -> TokenResponse:
+    return TokenResponse(
+        access_token=tokens.access_token,
+        refresh_token=tokens.refresh_token,
+        token_type=tokens.token_type,
+        expires_in=tokens.expires_in,
+    )
+
+
+@router.post("/register", response_model=UserResponse, status_code=201)
+{% if async_mode == "async" %}async {% endif %}def register(
+    payload: RegisterRequest,
+    use_case: Annotated[RegisterUser, Depends(get_register_user)],
+) -> UserResponse:
+    user = {% if async_mode == "async" %}await {% endif %}use_case.execute(payload.email, payload.password)
+    return UserResponse(id=user.id, email=user.email)
+
+
+@router.post("/token", response_model=TokenResponse)
+{% if async_mode == "async" %}async {% endif %}def login(
+    form: Annotated[OAuth2PasswordRequestForm, Depends()],
+    authenticate: Annotated[AuthenticateUser, Depends(get_authenticate_user)],
+    issuer: Annotated[IssueAuthTokens, Depends(get_issue_auth_tokens)],
+) -> TokenResponse:
+    user = {% if async_mode == "async" %}await {% endif %}authenticate.execute(form.username, form.password)
+    tokens = {% if async_mode == "async" %}await {% endif %}issuer.execute(user.id)
+    return _to_token_response(tokens)
+
+
+@router.post("/refresh", response_model=TokenResponse)
+{% if async_mode == "async" %}async {% endif %}def refresh(
+    payload: RefreshRequest,
+    use_case: Annotated[RefreshAuthTokens, Depends(get_refresh_auth_tokens)],
+) -> TokenResponse:
+    tokens = {% if async_mode == "async" %}await {% endif %}use_case.execute(payload.refresh_token)
+    return _to_token_response(tokens)
+
+
+@router.post("/logout", status_code=204)
+{% if async_mode == "async" %}async {% endif %}def logout(
+    payload: LogoutRequest,
+    use_case: Annotated[LogoutUser, Depends(get_logout_user)],
+) -> None:
+    {% if async_mode == "async" %}await {% endif %}use_case.execute(payload.refresh_token)
+
+
+@router.get("/me", response_model=UserResponse)
+{% if async_mode == "async" %}async {% endif %}def me(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> UserResponse:
+    return UserResponse(id=current_user.id, email=current_user.email)

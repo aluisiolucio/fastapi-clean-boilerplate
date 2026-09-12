@@ -1,0 +1,66 @@
+# {{ project_name }}
+
+API FastAPI em Clean Architecture (camadas `domain` → `application` → `adapters` → `infrastructure`).
+Modo de execução: **{{ async_mode }}**. Driver de banco: `psycopg` (psycopg3) via SQLAlchemy.
+
+## Requisitos
+
+- Python 3.13+ (desenvolvimento em 3.14)
+- [uv](https://docs.astral.sh/uv/)
+- Docker (testes de integração com testcontainers e, se gerado, compose)
+
+## Setup
+
+```bash
+uv sync
+cp .env.example .env   # ajuste SECRET_KEY e DATABASE_URL
+uv run poe migrate
+uv run poe run
+```
+
+API em `http://127.0.0.1:8000`. Docs: `/docs`. Health: `GET /health`.
+
+## Tarefas (Poe)
+
+```bash
+uv run poe lint
+uv run poe format
+uv run poe typecheck
+uv run poe test              # unitários + integração (Docker)
+uv run poe test-unit
+uv run poe test-integration
+uv run poe run
+uv run poe migrate
+uv run poe revision
+```
+
+Não há Makefile.
+
+## Autenticação
+
+- `POST /api/v1/auth/register` — `{ "email", "password" }`
+- `POST /api/v1/auth/token` — OAuth2 password (`username` = email)
+- `POST /api/v1/auth/refresh` — `{ "refresh_token" }` (rotação)
+- `POST /api/v1/auth/logout` — revoga o refresh
+- `GET /api/v1/auth/me` — Bearer access JWT
+
+Access JWT é curto. Refresh é opaco, persistido só como hash. Reuso de refresh já rotacionado revoga todos os tokens do usuário.
+
+CRUD de exemplo: `/api/v1/items` (JWT obrigatório).
+
+{% if include_docker %}
+## Docker
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+PostgreSQL + API. A imagem roda `alembic upgrade head` na subida.
+{% endif %}
+
+## Atualizar a partir do template
+
+```bash
+copier update
+```

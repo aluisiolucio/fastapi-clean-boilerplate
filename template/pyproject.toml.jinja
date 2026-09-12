@@ -1,0 +1,100 @@
+[project]
+name = "{{ project_slug }}"
+version = "0.1.0"
+description = "{{ project_name }}"
+readme = "README.md"
+authors = [
+    { name = "{{ author_name }}", email = "{{ author_email }}" },
+]
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.52.4",
+    "pydantic-settings>=2.15.0",
+    "pydantic[email]>=2.13.5",
+    "sqlalchemy>=2.0.52",
+    "alembic>=1.20.0",
+    "psycopg[binary]>=3.3.5",
+    "structlog>=26.1.0",
+    "pyjwt>=2.14.0",
+    "pwdlib[argon2]>=0.3.1",
+    "python-multipart>=0.0.32",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.7",
+    "ty~=0.0.80",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "httpx>=0.28.1",
+    "poethepoet>=0.48.0",
+    "testcontainers[postgres]>=4.15.0",
+    {%- if async_mode == "async" %}
+    "pytest-asyncio>=1.4.0",
+    {%- endif %}
+]
+
+[build-system]
+requires = ["uv_build>=0.11.19,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "{{ project_slug }}"
+module-root = "src"
+
+[tool.ruff]
+target-version = "py313"
+src = ["src", "tests"]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov={{ project_slug }} --cov-report=term-missing --cov-fail-under=80"
+{%- if async_mode == "async" %}
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+{%- endif %}
+
+[tool.coverage.run]
+source = ["src"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+]
+
+[tool.poe.tasks.install]
+cmd = "uv sync"
+
+[tool.poe.tasks.lint]
+shell = "ruff check src tests && ruff format --check src tests"
+
+[tool.poe.tasks.format]
+shell = "ruff format src tests && ruff check --fix src tests"
+
+[tool.poe.tasks.typecheck]
+cmd = "ty check"
+
+[tool.poe.tasks.test]
+cmd = "pytest"
+
+[tool.poe.tasks.test-unit]
+cmd = "pytest tests/unit"
+
+[tool.poe.tasks.test-integration]
+cmd = "pytest tests/integration"
+
+[tool.poe.tasks.run]
+cmd = "uvicorn {{ project_slug }}.main:app --reload"
+
+[tool.poe.tasks.migrate]
+cmd = "alembic upgrade head"
+
+[tool.poe.tasks.revision]
+cmd = "alembic revision --autogenerate"

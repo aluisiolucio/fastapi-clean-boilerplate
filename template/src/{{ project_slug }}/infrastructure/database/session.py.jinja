@@ -1,0 +1,61 @@
+from collections.abc import {% if async_mode == "async" %}AsyncIterator{% else %}Iterator{% endif %}
+from functools import lru_cache
+
+{% if async_mode == "async" -%}
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+{% else -%}
+from sqlalchemy import Engine, create_engine
+from sqlalchemy.orm import Session, sessionmaker
+{%- endif %}
+
+from ..config.settings import get_settings
+
+
+{% if async_mode == "async" -%}
+@lru_cache
+def get_engine() -> AsyncEngine:
+    return create_async_engine(get_settings().database_url, pool_pre_ping=True)
+
+
+@lru_cache
+def get_session_factory() -> async_sessionmaker[AsyncSession]:
+    return async_sessionmaker(
+        get_engine(), expire_on_commit=False, class_=AsyncSession
+    )
+
+
+async def get_session() -> AsyncIterator[AsyncSession]:
+    async with get_session_factory()() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+{% else -%}
+@lru_cache
+def get_engine() -> Engine:
+    return create_engine(get_settings().database_url, pool_pre_ping=True)
+
+
+@lru_cache
+def get_session_factory() -> sessionmaker[Session]:
+    return sessionmaker(bind=get_engine(), expire_on_commit=False, class_=Session)
+
+
+def get_session() -> Iterator[Session]:
+    session = get_session_factory()()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+{%- endif %}

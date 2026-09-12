@@ -1,0 +1,70 @@
+from datetime import UTC, datetime, timedelta
+from uuid import UUID, uuid4
+
+import pytest
+
+from {{ project_slug }}.domain.entities.item import Item
+from {{ project_slug }}.domain.entities.refresh_token import RefreshToken
+from {{ project_slug }}.domain.entities.user import User
+from {{ project_slug }}.domain.exceptions import InvalidTokenError
+from {{ project_slug }}.infrastructure.auth.jwt_token_service import JwtTokenService
+from {{ project_slug }}.infrastructure.auth.pwdlib_hasher import PwdlibPasswordHasher
+from {{ project_slug }}.infrastructure.auth.refresh_token_generator import (
+    SecureRefreshTokenGenerator,
+)
+from {{ project_slug }}.infrastructure.auth.sha256_token_hasher import Sha256TokenHasher
+from {{ project_slug }}.infrastructure.config.settings import Settings
+
+
+def test_item_rejects_blank_name() -> None:
+    with pytest.raises(ValueError, match="name must be non-empty"):
+        Item(id=uuid4(), name="  ", description="")
+
+
+def test_user_rejects_email_without_at() -> None:
+    with pytest.raises(ValueError, match="@"):
+        User(id=uuid4(), email="invalid", hashed_password="x")
+
+
+def test_refresh_token_expiry_and_revoke() -> None:
+    token = RefreshToken(
+        id=uuid4(),
+        user_id=uuid4(),
+        token_hash="abc",
+        expires_at=datetime.now(UTC) - timedelta(seconds=1),
+        revoked_at=None,
+        replaced_by_id=None,
+    )
+    assert token.is_expired()
+    revoked = token.revoke(replaced_by_id=uuid4())
+    assert revoked.is_revoked()
+    assert revoked.replaced_by_id is not None
+
+
+def test_jwt_roundtrip_and_rejects_garbage() -> None:
+    settings = Settings(
+        database_url="postgresql+psycopg://x",
+        secret_key="unit-test-secret-key-32chars!!",
+    )
+    service = JwtTokenService(settings)
+    user_id = UUID(int=42)
+    encoded = service.encode_access_token(user_id)
+    assert service.decode_access_token(encoded) == user_id
+    with pytest.raises(InvalidTokenError):
+        service.decode_access_token("not-a-jwt")
+
+
+def test_password_hasher_roundtrip() -> None:
+    hasher = PwdlibPasswordHasher()
+    hashed = hasher.hash("s3cret-password")
+    assert hasher.verify("s3cret-password", hashed)
+    assert not hasher.verify("wrong", hashed)
+
+
+def test_refresh_generator_persists_only_hash() -> None:
+    hasher = Sha256TokenHasher()
+    generated = SecureRefreshTokenGenerator(expire_days=7, hasher=hasher).generate(
+        uuid4()
+    )
+    assert generated.entity.token_hash == hasher.hash(generated.plaintext)
+    assert generated.plaintext not in generated.entity.token_hash

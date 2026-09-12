@@ -1,0 +1,47 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from .adapters.api.exception_handlers import register_exception_handlers
+from .adapters.api.health import router as health_router
+from .adapters.api.v1.auth import router as auth_router
+from .adapters.api.v1.items import router as items_router
+from .infrastructure.config.settings import Settings, get_settings
+from .infrastructure.logging.setup import configure_logging
+
+
+def _configure_cors(app: FastAPI, settings: Settings) -> None:
+    if settings.environment == "dev":
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+        return
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+
+def create_app() -> FastAPI:
+    """FastAPI factory. CORS is open in dev and origin-restricted in prod.
+
+    >>> app = create_app()  # doctest: +SKIP
+    """
+    settings = get_settings()
+    configure_logging()
+    app = FastAPI(title="{{ project_name }}")
+    _configure_cors(app, settings)
+    register_exception_handlers(app)
+    app.include_router(health_router)
+    app.include_router(auth_router, prefix="/api/v1")
+    app.include_router(items_router, prefix="/api/v1")
+    return app
+
+
+app = create_app()

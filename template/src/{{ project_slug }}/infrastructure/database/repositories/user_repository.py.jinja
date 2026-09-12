@@ -1,0 +1,53 @@
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+{% if async_mode == "async" -%}
+from sqlalchemy.ext.asyncio import AsyncSession
+{% else -%}
+from sqlalchemy.orm import Session
+{%- endif %}
+
+from ....domain.entities.user import User
+from ....domain.exceptions import EmailAlreadyExistsError
+from ..models.user import UserModel
+
+
+def _to_entity(model: UserModel) -> User:
+    return User(id=model.id, email=model.email, hashed_password=model.hashed_password)
+
+
+class SqlAlchemyUserRepository:
+    def __init__(self, session: {% if async_mode == "async" %}AsyncSession{% else %}Session{% endif %}) -> None:
+        self._session = session
+
+    {% if async_mode == "async" %}async {% endif %}def add(self, user: User) -> User:
+        model = UserModel(
+            id=user.id,
+            email=user.email,
+            hashed_password=user.hashed_password,
+        )
+        self._session.add(model)
+        try:
+            {% if async_mode == "async" %}await {% endif %}self._session.flush()
+        except IntegrityError as exc:
+            raise EmailAlreadyExistsError(user.email) from exc
+        return _to_entity(model)
+
+    {% if async_mode == "async" %}async {% endif %}def get_by_id(self, user_id: UUID) -> User | None:
+        model = {% if async_mode == "async" %}await {% endif %}self._session.get(UserModel, user_id)
+        if model is None:
+            return None
+        return _to_entity(model)
+
+    {% if async_mode == "async" %}async {% endif %}def get_by_email(self, email: str) -> User | None:
+        stmt = select(UserModel).where(UserModel.email == email)
+        {% if async_mode == "async" -%}
+        result = await self._session.scalars(stmt)
+        model = result.first()
+        {% else -%}
+        model = self._session.scalars(stmt).first()
+        {%- endif %}
+        if model is None:
+            return None
+        return _to_entity(model)

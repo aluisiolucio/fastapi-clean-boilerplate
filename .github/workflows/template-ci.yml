@@ -1,0 +1,35 @@
+name: Template CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  generate-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        async_mode: [sync, async]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+      - name: Generate project
+        run: |
+          uvx copier copy --trust --defaults --force \
+            --data project_name=Demo \
+            --data project_slug=demo_api \
+            --data async_mode=${{ matrix.async_mode }} \
+            --data author_name=CI \
+            --data author_email=ci@example.com \
+            . generated
+      - name: Lint, typecheck, test
+        working-directory: generated
+        run: |
+          uv sync
+          uv run poe lint
+          uv run poe typecheck
+          uv run poe test

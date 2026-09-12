@@ -1,0 +1,167 @@
+from typing import Annotated
+
+from fastapi import Depends
+from fastapi.security import OAuth2PasswordBearer
+{% if async_mode == "async" -%}
+from sqlalchemy.ext.asyncio import AsyncSession
+{% else -%}
+from sqlalchemy.orm import Session
+{%- endif %}
+
+from ...application.use_cases.authenticate_user import AuthenticateUser
+from ...application.use_cases.create_item import CreateItem
+from ...application.use_cases.delete_item import DeleteItem
+from ...application.use_cases.get_current_user import GetCurrentUser
+from ...application.use_cases.get_item import GetItem
+from ...application.use_cases.issue_auth_tokens import IssueAuthTokens
+from ...application.use_cases.list_items import ListItems
+from ...application.use_cases.logout_user import LogoutUser
+from ...application.use_cases.refresh_auth_tokens import RefreshAuthTokens
+from ...application.use_cases.register_user import RegisterUser
+from ...application.use_cases.update_item import UpdateItem
+from ...domain.entities.user import User
+from ...infrastructure.auth.jwt_token_service import JwtTokenService
+from ...infrastructure.auth.pwdlib_hasher import PwdlibPasswordHasher
+from ...infrastructure.auth.refresh_token_generator import SecureRefreshTokenGenerator
+from ...infrastructure.auth.sha256_token_hasher import Sha256TokenHasher
+from ...infrastructure.config.settings import Settings, get_settings
+from ...infrastructure.database.repositories.item_repository import (
+    SqlAlchemyItemRepository,
+)
+from ...infrastructure.database.repositories.refresh_token_repository import (
+    SqlAlchemyRefreshTokenRepository,
+)
+from ...infrastructure.database.repositories.user_repository import (
+    SqlAlchemyUserRepository,
+)
+from ...infrastructure.database.session import get_session
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
+
+SessionDep = Annotated[{% if async_mode == "async" %}AsyncSession{% else %}Session{% endif %}, Depends(get_session)]
+SettingsDep = Annotated[Settings, Depends(get_settings)]
+
+
+def _hasher() -> PwdlibPasswordHasher:
+    return PwdlibPasswordHasher()
+
+
+def _token_hasher() -> Sha256TokenHasher:
+    return Sha256TokenHasher()
+
+
+def get_user_repository(session: SessionDep) -> SqlAlchemyUserRepository:
+    return SqlAlchemyUserRepository(session)
+
+
+def get_item_repository(session: SessionDep) -> SqlAlchemyItemRepository:
+    return SqlAlchemyItemRepository(session)
+
+
+def get_refresh_token_repository(
+    session: SessionDep,
+) -> SqlAlchemyRefreshTokenRepository:
+    return SqlAlchemyRefreshTokenRepository(session)
+
+
+def get_token_service(settings: SettingsDep) -> JwtTokenService:
+    return JwtTokenService(settings)
+
+
+def get_refresh_generator(settings: SettingsDep) -> SecureRefreshTokenGenerator:
+    return SecureRefreshTokenGenerator(
+        expire_days=settings.refresh_token_expire_days,
+        hasher=_token_hasher(),
+    )
+
+
+def get_register_user(
+    users: Annotated[SqlAlchemyUserRepository, Depends(get_user_repository)],
+) -> RegisterUser:
+    return RegisterUser(users, _hasher())
+
+
+def get_authenticate_user(
+    users: Annotated[SqlAlchemyUserRepository, Depends(get_user_repository)],
+) -> AuthenticateUser:
+    return AuthenticateUser(users, _hasher())
+
+
+def get_issue_auth_tokens(
+    tokens: Annotated[JwtTokenService, Depends(get_token_service)],
+    generator: Annotated[SecureRefreshTokenGenerator, Depends(get_refresh_generator)],
+    refresh_tokens: Annotated[
+        SqlAlchemyRefreshTokenRepository,
+        Depends(get_refresh_token_repository),
+    ],
+    settings: SettingsDep,
+) -> IssueAuthTokens:
+    return IssueAuthTokens(
+        tokens,
+        generator,
+        refresh_tokens,
+        settings.access_token_expire_seconds,
+    )
+
+
+def get_refresh_auth_tokens(
+    refresh_tokens: Annotated[
+        SqlAlchemyRefreshTokenRepository,
+        Depends(get_refresh_token_repository),
+    ],
+    issuer: Annotated[IssueAuthTokens, Depends(get_issue_auth_tokens)],
+) -> RefreshAuthTokens:
+    return RefreshAuthTokens(_token_hasher(), refresh_tokens, issuer)
+
+
+def get_logout_user(
+    refresh_tokens: Annotated[
+        SqlAlchemyRefreshTokenRepository,
+        Depends(get_refresh_token_repository),
+    ],
+) -> LogoutUser:
+    return LogoutUser(_token_hasher(), refresh_tokens)
+
+
+def get_current_user_use_case(
+    users: Annotated[SqlAlchemyUserRepository, Depends(get_user_repository)],
+    tokens: Annotated[JwtTokenService, Depends(get_token_service)],
+) -> GetCurrentUser:
+    return GetCurrentUser(users, tokens)
+
+
+{% if async_mode == "async" %}async {% endif %}def get_current_user(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    use_case: Annotated[GetCurrentUser, Depends(get_current_user_use_case)],
+) -> User:
+    return {% if async_mode == "async" %}await {% endif %}use_case.execute(token)
+
+
+def get_create_item(
+    items: Annotated[SqlAlchemyItemRepository, Depends(get_item_repository)],
+) -> CreateItem:
+    return CreateItem(items)
+
+
+def get_get_item(
+    items: Annotated[SqlAlchemyItemRepository, Depends(get_item_repository)],
+) -> GetItem:
+    return GetItem(items)
+
+
+def get_list_items(
+    items: Annotated[SqlAlchemyItemRepository, Depends(get_item_repository)],
+) -> ListItems:
+    return ListItems(items)
+
+
+def get_update_item(
+    items: Annotated[SqlAlchemyItemRepository, Depends(get_item_repository)],
+) -> UpdateItem:
+    return UpdateItem(items)
+
+
+def get_delete_item(
+    items: Annotated[SqlAlchemyItemRepository, Depends(get_item_repository)],
+) -> DeleteItem:
+    return DeleteItem(items)

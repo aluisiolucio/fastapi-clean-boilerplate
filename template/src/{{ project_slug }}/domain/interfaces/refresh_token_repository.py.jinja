@@ -1,0 +1,14 @@
+from typing import Protocol
+from uuid import UUID
+
+from ..entities.refresh_token import RefreshToken
+
+
+class RefreshTokenRepository(Protocol):
+    {% if async_mode == "async" %}async {% endif %}def add(self, token: RefreshToken) -> RefreshToken: ...
+
+    {% if async_mode == "async" %}async {% endif %}def get_by_hash(self, token_hash: str) -> RefreshToken | None: ...
+
+    {% if async_mode == "async" %}async {% endif %}def update(self, token: RefreshToken) -> RefreshToken: ...
+
+    {% if async_mode == "async" %}async {% endif %}def revoke_all_for_user(self, user_id: UUID) -> None: ...

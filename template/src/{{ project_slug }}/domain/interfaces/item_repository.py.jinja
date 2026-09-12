@@ -1,0 +1,16 @@
+from typing import Protocol
+from uuid import UUID
+
+from ..entities.item import Item
+
+
+class ItemRepository(Protocol):
+    {% if async_mode == "async" %}async {% endif %}def add(self, item: Item) -> Item: ...
+
+    {% if async_mode == "async" %}async {% endif %}def get_by_id(self, item_id: UUID) -> Item | None: ...
+
+    {% if async_mode == "async" %}async {% endif %}def list_all(self) -> list[Item]: ...
+
+    {% if async_mode == "async" %}async {% endif %}def update(self, item: Item) -> Item: ...
+
+    {% if async_mode == "async" %}async {% endif %}def delete(self, item_id: UUID) -> None: ...

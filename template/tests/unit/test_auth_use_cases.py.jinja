@@ -1,0 +1,138 @@
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
+
+import pytest
+
+from {{ project_slug }}.application.use_cases.authenticate_user import AuthenticateUser
+from {{ project_slug }}.application.use_cases.get_current_user import GetCurrentUser
+from {{ project_slug }}.application.use_cases.issue_auth_tokens import IssueAuthTokens
+from {{ project_slug }}.application.use_cases.logout_user import LogoutUser
+from {{ project_slug }}.application.use_cases.refresh_auth_tokens import RefreshAuthTokens
+from {{ project_slug }}.application.use_cases.register_user import RegisterUser
+from {{ project_slug }}.domain.entities.refresh_token import RefreshToken
+from {{ project_slug }}.domain.exceptions import (
+    EmailAlreadyExistsError,
+    InvalidCredentialsError,
+    InvalidTokenError,
+    RefreshTokenReuseError,
+)
+from tests.unit.fakes import (
+    FakePasswordHasher,
+    FakeRefreshTokenGenerator,
+    FakeTokenHasher,
+    FakeTokenService,
+    InMemoryRefreshTokenRepository,
+    InMemoryUserRepository,
+)
+
+EMAIL = "user@example.com"
+PASSWORD = "s3cret-password"
+
+
+def _issuer() -> tuple[
+    IssueAuthTokens, InMemoryRefreshTokenRepository, FakeTokenHasher
+]:
+    hasher = FakeTokenHasher()
+    refresh_tokens = InMemoryRefreshTokenRepository()
+    issuer = IssueAuthTokens(
+        FakeTokenService(),
+        FakeRefreshTokenGenerator(hasher),
+        refresh_tokens,
+        access_expire_seconds=900,
+    )
+    return issuer, refresh_tokens, hasher
+
+
+{% if async_mode == "async" %}async {% endif %}def test_register_hashes_password_and_rejects_duplicates() -> None:
+    users = InMemoryUserRepository()
+    hasher = FakePasswordHasher()
+    use_case = RegisterUser(users, hasher)
+    user = {% if async_mode == "async" %}await {% endif %}use_case.execute(EMAIL, PASSWORD)
+    assert user.hashed_password == f"hashed:{PASSWORD}"
+    with pytest.raises(EmailAlreadyExistsError, match=EMAIL):
+        {% if async_mode == "async" %}await {% endif %}use_case.execute(EMAIL, PASSWORD)
+
+
+{% if async_mode == "async" %}async {% endif %}def test_authenticate_accepts_valid_and_rejects_invalid() -> None:
+    users = InMemoryUserRepository()
+    hasher = FakePasswordHasher()
+    {% if async_mode == "async" %}await {% endif %}RegisterUser(users, hasher).execute(EMAIL, PASSWORD)
+    auth = AuthenticateUser(users, hasher)
+    found = {% if async_mode == "async" %}await {% endif %}auth.execute(EMAIL, PASSWORD)
+    assert found.email == EMAIL
+    with pytest.raises(InvalidCredentialsError):
+        {% if async_mode == "async" %}await {% endif %}auth.execute(EMAIL, "wrong-password")
+    with pytest.raises(InvalidCredentialsError):
+        {% if async_mode == "async" %}await {% endif %}auth.execute("missing@example.com", PASSWORD)
+
+
+{% if async_mode == "async" %}async {% endif %}def test_issue_and_refresh_rotates_token() -> None:
+    users = InMemoryUserRepository()
+    user = {% if async_mode == "async" %}await {% endif %}RegisterUser(users, FakePasswordHasher()).execute(EMAIL, PASSWORD)
+    issuer, refresh_tokens, hasher = _issuer()
+    first = {% if async_mode == "async" %}await {% endif %}issuer.execute(user.id)
+    refreshed = {% if async_mode == "async" %}await {% endif %}RefreshAuthTokens(hasher, refresh_tokens, issuer).execute(
+        first.refresh_token
+    )
+    assert refreshed.refresh_token != first.refresh_token
+    stored = {% if async_mode == "async" %}await {% endif %}refresh_tokens.get_by_hash(hasher.hash(first.refresh_token))
+    assert stored is not None
+    assert stored.is_revoked()
+    assert stored.replaced_by_id == refreshed.refresh_token_id
+
+
+{% if async_mode == "async" %}async {% endif %}def test_refresh_reuse_revokes_family() -> None:
+    users = InMemoryUserRepository()
+    user = {% if async_mode == "async" %}await {% endif %}RegisterUser(users, FakePasswordHasher()).execute(EMAIL, PASSWORD)
+    issuer, refresh_tokens, hasher = _issuer()
+    first = {% if async_mode == "async" %}await {% endif %}issuer.execute(user.id)
+    use_case = RefreshAuthTokens(hasher, refresh_tokens, issuer)
+    {% if async_mode == "async" %}await {% endif %}use_case.execute(first.refresh_token)
+    with pytest.raises(RefreshTokenReuseError):
+        {% if async_mode == "async" %}await {% endif %}use_case.execute(first.refresh_token)
+    remaining = {% if async_mode == "async" %}await {% endif %}refresh_tokens.get_by_hash(hasher.hash("refresh-token-2"))
+    assert remaining is not None
+    assert remaining.is_revoked()
+
+
+{% if async_mode == "async" %}async {% endif %}def test_refresh_unknown_or_expired_is_invalid() -> None:
+    issuer, refresh_tokens, hasher = _issuer()
+    use_case = RefreshAuthTokens(hasher, refresh_tokens, issuer)
+    with pytest.raises(InvalidTokenError):
+        {% if async_mode == "async" %}await {% endif %}use_case.execute("unknown")
+    expired = RefreshToken(
+        id=uuid4(),
+        user_id=uuid4(),
+        token_hash=hasher.hash("expired"),
+        expires_at=datetime.now(UTC) - timedelta(seconds=1),
+        revoked_at=None,
+        replaced_by_id=None,
+    )
+    {% if async_mode == "async" %}await {% endif %}refresh_tokens.add(expired)
+    with pytest.raises(InvalidTokenError):
+        {% if async_mode == "async" %}await {% endif %}use_case.execute("expired")
+
+
+{% if async_mode == "async" %}async {% endif %}def test_logout_is_idempotent() -> None:
+    users = InMemoryUserRepository()
+    user = {% if async_mode == "async" %}await {% endif %}RegisterUser(users, FakePasswordHasher()).execute(EMAIL, PASSWORD)
+    issuer, refresh_tokens, hasher = _issuer()
+    tokens = {% if async_mode == "async" %}await {% endif %}issuer.execute(user.id)
+    logout = LogoutUser(hasher, refresh_tokens)
+    {% if async_mode == "async" %}await {% endif %}logout.execute(tokens.refresh_token)
+    {% if async_mode == "async" %}await {% endif %}logout.execute(tokens.refresh_token)
+    stored = {% if async_mode == "async" %}await {% endif %}refresh_tokens.get_by_hash(hasher.hash(tokens.refresh_token))
+    assert stored is not None
+    assert stored.is_revoked()
+
+
+{% if async_mode == "async" %}async {% endif %}def test_get_current_user_from_access_token() -> None:
+    users = InMemoryUserRepository()
+    user = {% if async_mode == "async" %}await {% endif %}RegisterUser(users, FakePasswordHasher()).execute(EMAIL, PASSWORD)
+    tokens = FakeTokenService()
+    found = {% if async_mode == "async" %}await {% endif %}GetCurrentUser(users, tokens).execute(
+        tokens.encode_access_token(user.id)
+    )
+    assert found.id == user.id
+    with pytest.raises(InvalidTokenError):
+        {% if async_mode == "async" %}await {% endif %}GetCurrentUser(users, tokens).execute("nope")
