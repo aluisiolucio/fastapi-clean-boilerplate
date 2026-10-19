@@ -30,6 +30,13 @@ cd minha-api
 uvx copier update
 ```
 
+O `copier update` só funciona em projetos versionados com Git. Se você alterou o
+template localmente, faça commit antes de gerar o projeto de teste: com a árvore
+suja, o Copier grava em `.copier-answers.yml` um commit temporário do estado
+alterado. Esse commit não existe no repositório e o update falha com
+`Unknown revision`. As respostas ficam em `.copier-answers.yml` e são
+reutilizadas no update.
+
 ## Perguntas do Copier
 
 | Campo | Efeito |
@@ -49,7 +56,8 @@ uvx copier update
 ## CRUD configurável
 
 Sem argumentos extras, o template reproduz o CRUD de `Item` em `/api/v1/items`
-com `name` (obrigatório) e `description` (opcional). Para outro recurso:
+com `name` (obrigatório, `str`, até 255) e `description` (opcional, `text`, até
+5000). Para outro recurso:
 
 ```bash
 uvx copier copy --trust \
@@ -67,10 +75,16 @@ uvx copier copy --trust \
 
 Cada campo aceita:
 
-- `name`: identificador em `snake_case`
+- `name`: identificador em `snake_case`, com até 32 caracteres
 - `type`: `str`, `text`, `int`, `float`, `bool`, `datetime` ou `uuid`
 - `required`: `true` ou `false`
-- `max_length`: opcional, apenas para `str`/`text`
+- `max_length`: opcional, inteiro positivo, apenas para `str`/`text`
+
+O valor de `resource_fields` é YAML; o JSON do exemplo é um YAML válido. Os
+nomes `resource_name` e o módulo derivado têm limite de 16 caracteres cada;
+`resource_plural` tem limite de 40. Nomes reservados, campos duplicados, tipos
+inválidos, `max_length` em campo não textual e aliases Pydantic colidentes são
+rejeitados antes de qualquer arquivo ser gerado.
 
 O `PATCH` é parcial: campo omitido não é alterado, campo opcional aceita `null` e
 campo obrigatório com `null` retorna 422. Relações/FKs, `unique`, índices, enums,
@@ -78,7 +92,8 @@ JSON, defaults por campo e regras de negócio ficam fora do escopo desta versão
 
 Use `--data include_crud=false` para gerar apenas auth, health e a infraestrutura
 compartilhada. Nesse caso não são criados entidade, use cases, rotas, tabela ou
-testes do CRUD.
+testes do CRUD. A resposta fica em `.copier-answers.yml` e é reutilizada pelo
+`copier update`.
 
 ## O que o projeto gerado inclui
 
@@ -86,6 +101,9 @@ testes do CRUD.
 - Contratos com `typing.Protocol` em `domain/interfaces/`
 - CRUD configurável (default: `Item` em `/api/v1/items`) + JWT com refresh opaco,
   rotação e detecção de reuso
+- Dockerfile e `docker-compose.yml` opcionais (`include_docker`)
+- Testes unitários e de integração; o CRUD gerado cobre PATCH parcial, `null`
+  opcional, `null` obrigatório e campo omitido
 - Ruff, ty, pytest, testcontainers, Poe the Poet (sem Makefile)
 - CI GitHub Actions
 
@@ -95,15 +113,24 @@ As mudanças do template estão documentadas em [CHANGELOG.md](CHANGELOG.md).
 
 ## Validar o template
 
+Matriz mínima: sync e async com os defaults, uma variante customizada e uma sem
+CRUD. Gere os destinos fora do repositório:
+
 ```bash
 uvx copier copy --trust --defaults --force \
-  --data project_slug=demo_api --data async_mode=sync "$PWD" /tmp/demo-sync
+  --data project_slug=demo_api --data async_mode=sync "$PWD" /tmp/opencode/demo-sync
 uvx copier copy --trust --defaults --force \
-  --data project_slug=demo_api --data async_mode=async "$PWD" /tmp/demo-async
+  --data project_slug=demo_api --data async_mode=async "$PWD" /tmp/opencode/demo-async
+
+# sem CRUD (repita com async_mode=async)
+uvx copier copy --trust --defaults --force \
+  --data project_slug=demo_api --data async_mode=sync \
+  --data include_crud=false "$PWD" /tmp/opencode/demo-no-crud
 ```
 
 Em cada destino: `uv sync && uv run poe lint && uv run poe typecheck && uv run poe test`.
-
-Para validar a variante sem CRUD, acrescente `--data include_crud=false`. Para
-validar campos/tipos diferentes, passe `resource_name`, `resource_plural` e
-`resource_fields` como no exemplo acima.
+Docker precisa estar disponível para os testes de integração. Para validar
+campos/tipos diferentes, passe `resource_name`, `resource_plural` e
+`resource_fields` como no exemplo acima. Vale cobrir também `include_docker=false`,
+todos os campos opcionais, primeiro campo `bool`/`datetime` e nomes no limite de
+tamanho.
