@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from {{ project_slug }}.domain.entities.item import Item
 from {{ project_slug }}.domain.entities.refresh_token import RefreshToken
@@ -41,10 +42,15 @@ def test_refresh_token_expiry_and_revoke() -> None:
     assert revoked.replaced_by_id is not None
 
 
+def test_settings_rejects_short_secret_key() -> None:
+    with pytest.raises(ValidationError):
+        Settings(database_url="postgresql+psycopg://x", secret_key="too-short")
+
+
 def test_jwt_roundtrip_and_rejects_garbage() -> None:
     settings = Settings(
         database_url="postgresql+psycopg://x",
-        secret_key="unit-test-secret-key-32chars!!",
+        secret_key="unit-test-secret-key-with-at-least-32-chars!!",
     )
     service = JwtTokenService(settings)
     user_id = UUID(int=42)

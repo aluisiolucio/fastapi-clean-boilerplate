@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 {% if async_mode == "async" -%}
 from sqlalchemy.ext.asyncio import AsyncSession
-{% else -%}
+{%- else -%}
 from sqlalchemy.orm import Session
 {%- endif %}
 
@@ -55,7 +55,7 @@ class SqlAlchemyRefreshTokenRepository:
         {% if async_mode == "async" -%}
         result = await self._session.scalars(stmt)
         model = result.first()
-        {% else -%}
+        {%- else -%}
         model = self._session.scalars(stmt).first()
         {%- endif %}
         if model is None:

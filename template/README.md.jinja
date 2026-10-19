@@ -13,7 +13,7 @@ Modo de execução: **{{ async_mode }}**. Driver de banco: `psycopg` (psycopg3) 
 
 ```bash
 uv sync
-cp .env.example .env   # ajuste SECRET_KEY e DATABASE_URL
+cp .env.example .env   # SECRET_KEY com pelo menos 32 caracteres
 uv run poe migrate
 uv run poe run
 ```
@@ -26,9 +26,9 @@ API em `http://127.0.0.1:8000`. Docs: `/docs`. Health: `GET /health`.
 uv run poe lint
 uv run poe format
 uv run poe typecheck
-uv run poe test              # unitários + integração (Docker)
-uv run poe test-unit
-uv run poe test-integration
+uv run poe test              # unitários + integração (Docker, cobertura >= 80%)
+uv run poe test-unit         # sem Docker e sem cobertura
+uv run poe test-integration  # sem cobertura, requer Docker
 uv run poe run
 uv run poe migrate
 uv run poe revision

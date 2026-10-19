@@ -24,11 +24,15 @@ class RefreshAuthTokens:
     {% if async_mode == "async" %}async {% endif %}def execute(self, raw_refresh: str) -> AuthTokens:
         token_hash = self._hasher.hash(raw_refresh)
         stored = {% if async_mode == "async" %}await {% endif %}self._refresh_tokens.get_by_hash(token_hash)
-        if stored is None or stored.is_expired():
+        if stored is None:
             raise InvalidTokenError()
         if stored.is_revoked():
+            if stored.replaced_by_id is None:
+                raise InvalidTokenError()
             {% if async_mode == "async" %}await {% endif %}self._refresh_tokens.revoke_all_for_user(stored.user_id)
             raise RefreshTokenReuseError()
+        if stored.is_expired():
+            raise InvalidTokenError()
         issued = {% if async_mode == "async" %}await {% endif %}self._issuer.execute(stored.user_id)
         revoked = stored.revoke(replaced_by_id=issued.refresh_token_id)
         {% if async_mode == "async" %}await {% endif %}self._refresh_tokens.update(revoked)

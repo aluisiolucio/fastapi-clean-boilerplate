@@ -46,6 +46,9 @@
   `domain/interfaces/`, implementados em `infrastructure/`.
 - Autenticação: access JWT (`TokenService`) + refresh opaco persistido
   (`RefreshTokenRepository`, hash SHA-256). Rotação no refresh; reuso revoga a família.
+- Erros de domínio que precisam manter alterações já feitas herdam de
+  `CommitRequiredError`; a dependência de sessão faz commit antes de propagar.
+  É isso que garante que o reuso de refresh revogue a família de forma persistente.
 
 ## Estrutura
 

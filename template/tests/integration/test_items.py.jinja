@@ -20,6 +20,16 @@ PASSWORD = "s3cret-password"
     assert response.status_code == 401
 
 
+{% if async_mode == "async" %}async {% endif %}def test_item_rejects_blank_name(client) -> None:
+    headers = {% if async_mode == "async" %}await {% endif %}_auth_header(client, "blank@example.com")
+    response = {% if async_mode == "async" %}await {% endif %}client.post(
+        "/api/v1/items",
+        json={"name": "   ", "description": ""},
+        headers=headers,
+    )
+    assert response.status_code == 422
+
+
 {% if async_mode == "async" %}async {% endif %}def test_item_crud(client) -> None:
     headers = {% if async_mode == "async" %}await {% endif %}_auth_header(client, "owner@example.com")
     created = {% if async_mode == "async" %}await {% endif %}client.post(

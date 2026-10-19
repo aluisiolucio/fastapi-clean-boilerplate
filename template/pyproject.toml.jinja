@@ -3,6 +3,7 @@ name = "{{ project_slug }}"
 version = "0.1.0"
 description = "{{ project_name }}"
 readme = "README.md"
+license = "{{ license }}"
 authors = [
     { name = "{{ author_name }}", email = "{{ author_email }}" },
 ]
@@ -12,7 +13,7 @@ dependencies = [
     "uvicorn[standard]>=0.52.4",
     "pydantic-settings>=2.15.0",
     "pydantic[email]>=2.13.5",
-    "sqlalchemy>=2.0.52",
+    "sqlalchemy{% if async_mode == "async" %}[asyncio]{% endif %}>=2.0.52",
     "alembic>=1.20.0",
     "psycopg[binary]>=3.3.5",
     "structlog>=26.1.0",
@@ -27,7 +28,7 @@ dev = [
     "ty~=0.0.80",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
-    "httpx>=0.28.1",
+    "httpx2>=2.14.0",
     "poethepoet>=0.48.0",
     "testcontainers[postgres]>=4.15.0",
     {%- if async_mode == "async" %}
@@ -85,10 +86,10 @@ cmd = "ty check"
 cmd = "pytest"
 
 [tool.poe.tasks.test-unit]
-cmd = "pytest tests/unit"
+cmd = "pytest tests/unit --no-cov"
 
 [tool.poe.tasks.test-integration]
-cmd = "pytest tests/integration"
+cmd = "pytest tests/integration --no-cov"
 
 [tool.poe.tasks.run]
 cmd = "uvicorn {{ project_slug }}.main:app --reload"

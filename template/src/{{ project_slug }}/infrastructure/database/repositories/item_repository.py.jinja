@@ -3,7 +3,7 @@ from uuid import UUID
 {% if async_mode == "async" -%}
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-{% else -%}
+{%- else -%}
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 {%- endif %}
@@ -36,7 +36,7 @@ class SqlAlchemyItemRepository:
         {% if async_mode == "async" -%}
         result = await self._session.scalars(select(ItemModel))
         return [_to_entity(model) for model in result.all()]
-        {% else -%}
+        {%- else -%}
         models = self._session.scalars(select(ItemModel)).all()
         return [_to_entity(model) for model in models]
         {%- endif %}
@@ -57,7 +57,7 @@ class SqlAlchemyItemRepository:
         {% if async_mode == "async" -%}
         await self._session.delete(model)
         await self._session.flush()
-        {% else -%}
+        {%- else -%}
         self._session.delete(model)
         self._session.flush()
         {%- endif %}

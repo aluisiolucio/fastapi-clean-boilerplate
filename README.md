@@ -9,7 +9,7 @@ Variações: **sync** e **async**.
 uvx copier copy gh:aluisiolucio/fastapi-clean-boilerplate caminho/do/projeto
 cd caminho/do/projeto
 uv sync
-cp .env.example .env
+cp .env.example .env   # SECRET_KEY com pelo menos 32 caracteres
 uv run poe migrate
 uv run poe run
 ```
@@ -17,8 +17,11 @@ uv run poe run
 Cópia local (desenvolvimento do template):
 
 ```bash
-uvx copier copy --trust . ../minha-api
+uvx copier copy --trust "$PWD" ../minha-api
 ```
+
+Use o caminho absoluto: o Copier grava a origem em `.copier-answers.yml`, e um
+caminho relativo como `.` apontaria para o próprio projeto na hora do `update`.
 
 Atualizar um projeto já gerado:
 
@@ -45,13 +48,17 @@ uvx copier update
 - Ruff, ty, pytest, testcontainers, Poe the Poet (sem Makefile)
 - CI GitHub Actions
 
+## Changelog
+
+As mudanças do template estão documentadas em [CHANGELOG.md](CHANGELOG.md).
+
 ## Validar o template
 
 ```bash
 uvx copier copy --trust --defaults --force \
-  --data project_slug=demo_api --data async_mode=sync . /tmp/demo-sync
+  --data project_slug=demo_api --data async_mode=sync "$PWD" /tmp/demo-sync
 uvx copier copy --trust --defaults --force \
-  --data project_slug=demo_api --data async_mode=async . /tmp/demo-async
+  --data project_slug=demo_api --data async_mode=async "$PWD" /tmp/demo-async
 ```
 
 Em cada destino: `uv sync && uv run poe lint && uv run poe typecheck && uv run poe test`.

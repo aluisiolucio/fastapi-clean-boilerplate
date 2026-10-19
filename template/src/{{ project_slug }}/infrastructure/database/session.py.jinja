@@ -8,11 +8,12 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-{% else -%}
+{%- else -%}
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 {%- endif %}
 
+from ...domain.exceptions import CommitRequiredError
 from ..config.settings import get_settings
 
 
@@ -24,9 +25,7 @@ def get_engine() -> AsyncEngine:
 
 @lru_cache
 def get_session_factory() -> async_sessionmaker[AsyncSession]:
-    return async_sessionmaker(
-        get_engine(), expire_on_commit=False, class_=AsyncSession
-    )
+    return async_sessionmaker(get_engine(), expire_on_commit=False, class_=AsyncSession)
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:
@@ -34,10 +33,13 @@ async def get_session() -> AsyncIterator[AsyncSession]:
         try:
             yield session
             await session.commit()
+        except CommitRequiredError:
+            await session.commit()
+            raise
         except Exception:
             await session.rollback()
             raise
-{% else -%}
+{%- else -%}
 @lru_cache
 def get_engine() -> Engine:
     return create_engine(get_settings().database_url, pool_pre_ping=True)
@@ -53,6 +55,9 @@ def get_session() -> Iterator[Session]:
     try:
         yield session
         session.commit()
+    except CommitRequiredError:
+        session.commit()
+        raise
     except Exception:
         session.rollback()
         raise

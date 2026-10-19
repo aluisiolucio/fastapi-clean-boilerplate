@@ -4,7 +4,7 @@ from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
 {% if async_mode == "async" -%}
 from sqlalchemy.ext.asyncio import AsyncSession
-{% else -%}
+{%- else -%}
 from sqlalchemy.orm import Session
 {%- endif %}
 

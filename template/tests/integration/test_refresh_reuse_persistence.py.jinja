@@ -1,0 +1,57 @@
+{% if async_mode == "async" -%}
+from httpx2 import ASGITransport, AsyncClient
+{%- else -%}
+from fastapi.testclient import TestClient
+{%- endif %}
+
+from {{ project_slug }}.main import create_app
+
+PASSWORD = "s3cret-password"
+
+
+{% if async_mode == "async" -%}
+async def test_refresh_reuse_revokes_family_in_database(postgres_url: str) -> None:
+    app = create_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        await _assert_reuse_revokes_family(client)
+
+
+async def _assert_reuse_revokes_family(client: AsyncClient) -> None:
+{%- else -%}
+def test_refresh_reuse_revokes_family_in_database(postgres_url: str) -> None:
+    app = create_app()
+    with TestClient(app) as client:
+        _assert_reuse_revokes_family(client)
+
+
+def _assert_reuse_revokes_family(client: TestClient) -> None:
+{%- endif %}
+    email = "reuse-family@example.com"
+    register = {% if async_mode == "async" %}await {% endif %}client.post(
+        "/api/v1/auth/register",
+        json={"email": email, "password": PASSWORD},
+    )
+    assert register.status_code == 201
+    login = {% if async_mode == "async" %}await {% endif %}client.post(
+        "/api/v1/auth/token",
+        data={"username": email, "password": PASSWORD},
+    )
+    assert login.status_code == 200
+    first_token = login.json()["refresh_token"]
+    rotated = {% if async_mode == "async" %}await {% endif %}client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": first_token},
+    )
+    assert rotated.status_code == 200
+    family_token = rotated.json()["refresh_token"]
+    reused = {% if async_mode == "async" %}await {% endif %}client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": first_token},
+    )
+    assert reused.status_code == 401
+    family = {% if async_mode == "async" %}await {% endif %}client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": family_token},
+    )
+    assert family.status_code == 401

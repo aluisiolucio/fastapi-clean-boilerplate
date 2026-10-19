@@ -9,7 +9,7 @@ _message_after_copy: |
 
     cd {{ _copier_conf.dst_path }}
     uv sync
-    cp .env.example .env   # ajuste SECRET_KEY e DATABASE_URL
+    cp .env.example .env   # ajuste SECRET_KEY (>= 32 caracteres) e DATABASE_URL
     uv run poe migrate
     uv run poe run
 

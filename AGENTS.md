@@ -29,6 +29,8 @@ na raiz. O projeto gerado vive em `template/` e usa `{{ project_slug }}`.
   `{% if include_docker %}Dockerfile{% endif %}.jinja`.
 - Docs gerados (README, AGENTS.md) em português; identificadores de código em inglês.
 - JWT funcional: access curto + refresh persistido. Não simplificar para só access.
+- Erros de domínio que precisam persistir alterações herdam de `CommitRequiredError`;
+  a dependência de sessão faz commit antes de propagar (reuso de refresh revoga a família).
 
 ## Como validar
 
@@ -36,7 +38,11 @@ Gerar as duas variantes com Copier e rodar Poe no destino (Docker para integraç
 
 ```bash
 uvx copier copy --trust --defaults --force \
-  --data project_slug=demo_api --data async_mode=sync . /tmp/demo-sync
+  --data project_slug=demo_api --data async_mode=sync "$PWD" /tmp/demo-sync
 ```
 
 `uv sync && uv run poe lint && uv run poe typecheck && uv run poe test`
+
+Para testar `copier update`, use o caminho absoluto do template (`"$PWD"`).
+O Copier grava a origem em `.copier-answers.yml`; um `_src_path` relativo
+como `.` aponta para o projeto gerado e quebra o update.

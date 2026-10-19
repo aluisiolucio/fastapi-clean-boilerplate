@@ -126,13 +126,26 @@ def _issuer() -> tuple[
     assert stored.is_revoked()
 
 
+{% if async_mode == "async" %}async {% endif %}def test_logout_does_not_revoke_other_sessions() -> None:
+    users = InMemoryUserRepository()
+    user = {% if async_mode == "async" %}await {% endif %}RegisterUser(users, FakePasswordHasher()).execute(EMAIL, PASSWORD)
+    issuer, refresh_tokens, hasher = _issuer()
+    first = {% if async_mode == "async" %}await {% endif %}issuer.execute(user.id)
+    second = {% if async_mode == "async" %}await {% endif %}issuer.execute(user.id)
+    {% if async_mode == "async" %}await {% endif %}LogoutUser(hasher, refresh_tokens).execute(first.refresh_token)
+    use_case = RefreshAuthTokens(hasher, refresh_tokens, issuer)
+    with pytest.raises(InvalidTokenError):
+        {% if async_mode == "async" %}await {% endif %}use_case.execute(first.refresh_token)
+    rotated = {% if async_mode == "async" %}await {% endif %}use_case.execute(second.refresh_token)
+    assert rotated.refresh_token != second.refresh_token
+
+
 {% if async_mode == "async" %}async {% endif %}def test_get_current_user_from_access_token() -> None:
     users = InMemoryUserRepository()
     user = {% if async_mode == "async" %}await {% endif %}RegisterUser(users, FakePasswordHasher()).execute(EMAIL, PASSWORD)
     tokens = FakeTokenService()
-    found = {% if async_mode == "async" %}await {% endif %}GetCurrentUser(users, tokens).execute(
-        tokens.encode_access_token(user.id)
-    )
+    access_token = tokens.encode_access_token(user.id)
+    found = {% if async_mode == "async" %}await {% endif %}GetCurrentUser(users, tokens).execute(access_token)
     assert found.id == user.id
     with pytest.raises(InvalidTokenError):
         {% if async_mode == "async" %}await {% endif %}GetCurrentUser(users, tokens).execute("nope")
