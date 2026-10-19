@@ -1,0 +1,30 @@
+{% import "template/_macros.jinja" as m -%}
+{% set has_datetime = resource_fields | selectattr('type', 'equalto', 'datetime') | list -%}
+{% set model_lines = [] -%}
+{% set _ = model_lines.append('    id: Mapped[UUID] = mapped_column(primary_key=True)') -%}
+{% for field in resource_fields -%}
+{% set annotation = 'Mapped[' ~ m.py_type(field) ~ (' | None' if not field.required else '') ~ ']' -%}
+{% set one_line = '    ' ~ field.name ~ ': ' ~ annotation ~ ' = mapped_column(' ~ m.sa_type(field) ~ ', nullable=' ~ ('False' if field.required else 'True') ~ ')' -%}
+{% if (one_line | length) <= 88 -%}
+{% set _ = model_lines.append(one_line) -%}
+{% else -%}
+{% set _ = model_lines.extend([
+    '    ' ~ field.name ~ ': ' ~ annotation ~ ' = mapped_column(',
+    '        ' ~ m.sa_type(field) ~ ', nullable=' ~ ('False' if field.required else 'True'),
+    '    )',
+]) -%}
+{% endif -%}
+{% endfor -%}
+{% if has_datetime %}from datetime import datetime
+{% endif %}from uuid import UUID
+
+import sqlalchemy as sa
+from sqlalchemy.orm import Mapped, mapped_column
+
+from .base import Base
+
+
+class {{ resource_name }}Model(Base):
+    __tablename__ = "{{ resource_plural }}"
+
+{{ model_lines | join('\n') }}

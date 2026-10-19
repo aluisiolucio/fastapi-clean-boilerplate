@@ -1,0 +1,37 @@
+{% import "template/_macros.jinja" as m -%}
+{% set has_datetime = resource_fields | selectattr('type', 'equalto', 'datetime') | list -%}
+{% set str_fields = resource_fields | selectattr('type', 'equalto', 'str') | list -%}
+{% set class_lines = [] -%}
+{% set _ = class_lines.append('    """' ~ resource_name ~ ' entity identified by UUID."""') -%}
+{% set _ = class_lines.append('') -%}
+{% set _ = class_lines.append('    id: UUID') -%}
+{% for field in resource_fields -%}
+{% set _ = class_lines.append('    ' ~ field.name ~ ': ' ~ m.py_type(field) ~ (' | None' if not field.required else '')) -%}
+{% endfor -%}
+{% if str_fields -%}
+{% set _ = class_lines.append('') -%}
+{% set _ = class_lines.append('    def __post_init__(self) -> None:') -%}
+{% for field in str_fields -%}
+{% set _ = class_lines.append('        value = self.' ~ field.name) -%}
+{% if field.required -%}
+{% set _ = class_lines.append('        if not value.strip():') -%}
+{% else -%}
+{% set _ = class_lines.append('        if value is not None and not value.strip():') -%}
+{% endif -%}
+{% set _ = class_lines.append('            raise ValueError(') -%}
+{% set _ = class_lines.append('                f"' ~ field.name ~ ' must not be blank: {value!r}",') -%}
+{% set _ = class_lines.append('            )') -%}
+{% endfor -%}
+{% endif -%}
+{% set _ = class_lines.append('') -%}
+{% set _ = class_lines.append('    def with_updates(self, **changes: object) -> "' ~ resource_name ~ '":') -%}
+{% set _ = class_lines.append('        """Return a copy with the given fields replaced."""') -%}
+{% set _ = class_lines.append('        return replace(self, **changes)') -%}
+from dataclasses import dataclass, replace
+{% if has_datetime %}from datetime import datetime
+{% endif %}from uuid import UUID
+
+
+@dataclass(frozen=True)
+class {{ resource_name }}:
+{{ class_lines | join('\n') }}

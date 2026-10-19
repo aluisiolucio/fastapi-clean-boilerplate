@@ -1,0 +1,66 @@
+{% macro py_type(field) -%}
+{%- if field.type in ("str", "text") -%}str
+{%- elif field.type == "int" -%}int
+{%- elif field.type == "float" -%}float
+{%- elif field.type == "bool" -%}bool
+{%- elif field.type == "datetime" -%}datetime
+{%- elif field.type == "uuid" -%}UUID
+{%- endif -%}
+{%- endmacro %}
+
+{% macro alias_name(field) -%}
+{{ field.name | title | replace('_', '') }}Field
+{%- endmacro %}
+
+{% macro pydantic_type(field) -%}
+{%- if field.type == "str" or (field.type == "text" and field.max_length) -%}
+{{ alias_name(field) }}
+{%- else -%}
+{{ py_type(field) }}
+{%- endif -%}
+{%- endmacro %}
+
+{% macro sa_type(field) -%}
+{%- if field.type == "str" -%}sa.String(length={{ field.max_length | default(255) }})
+{%- elif field.type == "text" -%}sa.Text()
+{%- elif field.type == "int" -%}sa.Integer()
+{%- elif field.type == "float" -%}sa.Float()
+{%- elif field.type == "bool" -%}sa.Boolean()
+{%- elif field.type == "datetime" -%}sa.DateTime(timezone=True)
+{%- elif field.type == "uuid" -%}sa.Uuid()
+{%- endif -%}
+{%- endmacro %}
+
+{% macro sample_py(field, updated=false) -%}
+{%- if field.type in ("str", "text") -%}
+{%- set text = "Updated" if updated else "Sample" -%}
+"{{ text[:field.max_length | default(255)] }}"
+{%- elif field.type == "int" -%}
+{{ 2 if updated else 1 }}
+{%- elif field.type == "float" -%}
+{{ 2.5 if updated else 1.5 }}
+{%- elif field.type == "bool" -%}
+{{ false if updated else true }}
+{%- elif field.type == "datetime" -%}
+datetime(2026, {{ 2 if updated else 1 }}, 1, tzinfo=UTC)
+{%- elif field.type == "uuid" -%}
+UUID(int={{ 2 if updated else 1 }})
+{%- endif -%}
+{%- endmacro %}
+
+{% macro sample_literal(field, updated=false) -%}
+{%- if field.type in ("str", "text") -%}
+{%- set text = "Updated" if updated else "Sample" -%}
+"{{ text[:field.max_length | default(255)] }}"
+{%- elif field.type == "int" -%}
+{{ 2 if updated else 1 }}
+{%- elif field.type == "float" -%}
+{{ 2.5 if updated else 1.5 }}
+{%- elif field.type == "bool" -%}
+{{ "False" if updated else "True" }}
+{%- elif field.type == "datetime" -%}
+"2026-0{{ 2 if updated else 1 }}-01T00:00:00Z"
+{%- elif field.type == "uuid" -%}
+"00000000-0000-0000-0000-00000000000{{ 2 if updated else 1 }}"
+{%- endif -%}
+{%- endmacro %}

@@ -1,35 +1,53 @@
+{% set entity_imports = [
+    ("auth_tokens", "GeneratedRefreshToken"),
+    ("refresh_token", "RefreshToken"),
+    ("user", "User"),
+] -%}
+{% if include_crud -%}
+{% set _ = entity_imports.append((resource_module, resource_name)) -%}
+{% endif -%}
+{% set entity_import_lines = [] -%}
+{% for module, symbol in entity_imports | sort -%}
+{% set line = 'from ' ~ project_slug ~ '.domain.entities.' ~ module ~ ' import ' ~ symbol -%}
+{% if (line | length) <= 88 -%}
+{% set _ = entity_import_lines.append(line) -%}
+{% else -%}
+{% set _ = entity_import_lines.extend([
+    'from ' ~ project_slug ~ '.domain.entities.' ~ module ~ ' import (',
+    '    ' ~ symbol ~ ',',
+    ')',
+]) -%}
+{% endif -%}
+{% endfor -%}
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from {{ project_slug }}.domain.entities.auth_tokens import GeneratedRefreshToken
-from {{ project_slug }}.domain.entities.item import Item
-from {{ project_slug }}.domain.entities.refresh_token import RefreshToken
-from {{ project_slug }}.domain.entities.user import User
+{{ entity_import_lines | join('\n') }}
 from {{ project_slug }}.domain.exceptions import InvalidTokenError
 
-
-class InMemoryItemRepository:
+{% if include_crud %}
+class InMemory{{ resource_name }}Repository:
     def __init__(self) -> None:
-        self._items: dict[UUID, Item] = {}
+        self._entities: dict[UUID, {{ resource_name }}] = {}
 
-    {% if async_mode == "async" %}async {% endif %}def add(self, item: Item) -> Item:
-        self._items[item.id] = item
-        return item
+    {% if async_mode == "async" %}async {% endif %}def add(self, entity: {{ resource_name }}) -> {{ resource_name }}:
+        self._entities[entity.id] = entity
+        return entity
 
-    {% if async_mode == "async" %}async {% endif %}def get_by_id(self, item_id: UUID) -> Item | None:
-        return self._items.get(item_id)
+    {% if async_mode == "async" %}async {% endif %}def get_by_id(self, {{ resource_module }}_id: UUID) -> {{ resource_name }} | None:
+        return self._entities.get({{ resource_module }}_id)
 
-    {% if async_mode == "async" %}async {% endif %}def list_all(self) -> list[Item]:
-        return list(self._items.values())
+    {% if async_mode == "async" %}async {% endif %}def list_all(self) -> list[{{ resource_name }}]:
+        return list(self._entities.values())
 
-    {% if async_mode == "async" %}async {% endif %}def update(self, item: Item) -> Item:
-        self._items[item.id] = item
-        return item
+    {% if async_mode == "async" %}async {% endif %}def update(self, entity: {{ resource_name }}) -> {{ resource_name }}:
+        self._entities[entity.id] = entity
+        return entity
 
-    {% if async_mode == "async" %}async {% endif %}def delete(self, item_id: UUID) -> None:
-        self._items.pop(item_id, None)
+    {% if async_mode == "async" %}async {% endif %}def delete(self, {{ resource_module }}_id: UUID) -> None:
+        self._entities.pop({{ resource_module }}_id, None)
 
-
+{% endif %}
 class InMemoryUserRepository:
     def __init__(self) -> None:
         self._by_id: dict[UUID, User] = {}

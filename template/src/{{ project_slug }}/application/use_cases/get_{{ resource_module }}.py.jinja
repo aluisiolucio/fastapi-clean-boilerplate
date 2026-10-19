@@ -1,0 +1,18 @@
+from uuid import UUID
+
+from ...domain.entities.{{ resource_module }} import {{ resource_name }}
+from ...domain.exceptions import {{ resource_name }}NotFoundError
+from ...domain.interfaces.{{ resource_module }}_repository import {{ resource_name }}Repository
+
+
+class Get{{ resource_name }}:
+    """Loads one {{ resource_module }} by id or raises {{ resource_name }}NotFoundError."""
+
+    def __init__(self, repository: {{ resource_name }}Repository) -> None:
+        self._repository = repository
+
+    {% if async_mode == "async" %}async {% endif %}def execute(self, {{ resource_module }}_id: UUID) -> {{ resource_name }}:
+        entity = {% if async_mode == "async" %}await {% endif %}self._repository.get_by_id({{ resource_module }}_id)
+        if entity is None:
+            raise {{ resource_name }}NotFoundError({{ resource_module }}_id)
+        return entity

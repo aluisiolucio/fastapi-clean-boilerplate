@@ -1,12 +1,43 @@
+{% import "template/_macros.jinja" as m -%}
+{% set str_fields = resource_fields | selectattr('type', 'equalto', 'str') | list -%}
+{% set blank_field = str_fields[0] if str_fields else None -%}
+{% set entity_imports = [
+    ("refresh_token", "RefreshToken"),
+    ("user", "User"),
+] -%}
+{% if include_crud and blank_field -%}
+{% set _ = entity_imports.append((resource_module, resource_name)) -%}
+{% endif -%}
+{% set blank_test = '' -%}
+{% if include_crud and blank_field -%}
+{% set blank_test_lines = [
+    'def test_' ~ resource_module ~ '_rejects_blank_' ~ blank_field.name ~ '() -> None:',
+    '    with pytest.raises(',
+    '        ValueError,',
+    '        match="' ~ blank_field.name ~ ' must not be blank",',
+    '    ):',
+    '        ' ~ resource_name ~ '(',
+    '            id=uuid4(),',
+] -%}
+{% for field in resource_fields -%}
+{% if field.name == blank_field.name -%}
+{% set _ = blank_test_lines.append('            ' ~ field.name ~ '="  ",') -%}
+{% else -%}
+{% set _ = blank_test_lines.append('            ' ~ field.name ~ '=' ~ m.sample_py(field) ~ ',') -%}
+{% endif -%}
+{% endfor -%}
+{% set _ = blank_test_lines.append('        )') -%}
+{% set blank_test = blank_test_lines | join('\n') ~ '\n\n\n' -%}
+{% endif -%}
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
 
-from {{ project_slug }}.domain.entities.item import Item
-from {{ project_slug }}.domain.entities.refresh_token import RefreshToken
-from {{ project_slug }}.domain.entities.user import User
+{% for module, symbol in entity_imports | sort -%}
+from {{ project_slug }}.domain.entities.{{ module }} import {{ symbol }}
+{% endfor -%}
 from {{ project_slug }}.domain.exceptions import InvalidTokenError
 from {{ project_slug }}.infrastructure.auth.jwt_token_service import JwtTokenService
 from {{ project_slug }}.infrastructure.auth.pwdlib_hasher import PwdlibPasswordHasher
@@ -17,12 +48,7 @@ from {{ project_slug }}.infrastructure.auth.sha256_token_hasher import Sha256Tok
 from {{ project_slug }}.infrastructure.config.settings import Settings
 
 
-def test_item_rejects_blank_name() -> None:
-    with pytest.raises(ValueError, match="name must be non-empty"):
-        Item(id=uuid4(), name="  ", description="")
-
-
-def test_user_rejects_email_without_at() -> None:
+{{ blank_test }}def test_user_rejects_email_without_at() -> None:
     with pytest.raises(ValueError, match="@"):
         User(id=uuid4(), email="invalid", hashed_password="x")
 

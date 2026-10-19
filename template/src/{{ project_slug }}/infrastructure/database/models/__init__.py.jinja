@@ -1,0 +1,19 @@
+{% set model_imports = [
+    ("base", "Base"),
+    ("refresh_token", "RefreshTokenModel"),
+    ("user", "UserModel"),
+] -%}
+{% if include_crud -%}
+{% set _ = model_imports.append((resource_module, resource_name ~ "Model")) -%}
+{% endif -%}
+{% set model_import_lines = [] -%}
+{% set all_lines = [] -%}
+{% for module, symbol in model_imports | sort -%}
+{% set _ = model_import_lines.append('from .' ~ module ~ ' import ' ~ symbol) -%}
+{% set _ = all_lines.append('    "' ~ symbol ~ '",') -%}
+{% endfor -%}
+{{ model_import_lines | join('\n') }}
+
+__all__ = [
+{{ all_lines | join('\n') }}
+]

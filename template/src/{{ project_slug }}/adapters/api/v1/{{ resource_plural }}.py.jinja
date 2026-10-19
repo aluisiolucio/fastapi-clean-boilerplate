@@ -1,0 +1,130 @@
+{% set list_class = "List" ~ (resource_plural | title | replace('_', '')) -%}
+{% set entity_imports = [("user", "User"), (resource_module, resource_name)] | sort -%}
+{% set application_imports = [
+    ("create_" ~ resource_module, "Create" ~ resource_name),
+    ("delete_" ~ resource_module, "Delete" ~ resource_name),
+    ("get_" ~ resource_module, "Get" ~ resource_name),
+    ("list_" ~ resource_plural, list_class),
+    ("update_" ~ resource_module, "Update" ~ resource_name),
+] -%}
+{% set application_import_lines = [] -%}
+{% for module, symbol in application_imports -%}
+{% set line = 'from ....application.use_cases.' ~ module ~ ' import ' ~ symbol -%}
+{% if (line | length) <= 88 -%}
+{% set _ = application_import_lines.append(line) -%}
+{% else -%}
+{% set _ = application_import_lines.extend([
+    'from ....application.use_cases.' ~ module ~ ' import (',
+    '    ' ~ symbol ~ ',',
+    ')',
+]) -%}
+{% endif -%}
+{% endfor -%}
+{% set entity_import_lines = [] -%}
+{% for module, symbol in entity_imports -%}
+{% set line = 'from ....domain.entities.' ~ module ~ ' import ' ~ symbol -%}
+{% if (line | length) <= 88 -%}
+{% set _ = entity_import_lines.append(line) -%}
+{% else -%}
+{% set _ = entity_import_lines.extend([
+    'from ....domain.entities.' ~ module ~ ' import (',
+    '    ' ~ symbol ~ ',',
+    ')',
+]) -%}
+{% endif -%}
+{% endfor -%}
+{% set schema_import_lines = [
+    'from .schemas.' ~ resource_module ~ ' import (',
+    '    ' ~ resource_name ~ 'Create,',
+    '    ' ~ resource_name ~ 'Response,',
+    '    ' ~ resource_name ~ 'Update,',
+    ')',
+] -%}
+{% set to_response_lines = [] -%}
+{% set _ = to_response_lines.append('        id=entity.id,') -%}
+{% for field in resource_fields -%}
+{% set _ = to_response_lines.append('        ' ~ field.name ~ '=entity.' ~ field.name ~ ',') -%}
+{% endfor -%}
+{% set create_call_lines = [] -%}
+{% for field in resource_fields -%}
+{% set _ = create_call_lines.append('        ' ~ field.name ~ '=payload.' ~ field.name ~ ',') -%}
+{% endfor -%}
+from typing import Annotated
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Response, status
+
+{{ application_import_lines | join('\n') }}
+{{ entity_import_lines | join('\n') }}
+from ..deps import (
+    get_create_{{ resource_module }},
+    get_current_user,
+    get_delete_{{ resource_module }},
+    get_get_{{ resource_module }},
+    get_list_{{ resource_plural }},
+    get_update_{{ resource_module }},
+)
+{{ schema_import_lines | join('\n') }}
+
+router = APIRouter(prefix="/{{ resource_plural }}", tags=["{{ resource_plural }}"])
+
+
+def _to_response(entity: {{ resource_name }}) -> {{ resource_name }}Response:
+    return {{ resource_name }}Response(
+{{ to_response_lines | join('\n') }}
+    )
+
+
+@router.post("", response_model={{ resource_name }}Response, status_code=201)
+{% if async_mode == "async" %}async {% endif %}def create_{{ resource_module }}(
+    payload: {{ resource_name }}Create,
+    _user: Annotated[User, Depends(get_current_user)],
+    use_case: Annotated[Create{{ resource_name }}, Depends(get_create_{{ resource_module }})],
+) -> {{ resource_name }}Response:
+    entity = {% if async_mode == "async" %}await {% endif %}use_case.execute(
+{{ create_call_lines | join('\n') }}
+    )
+    return _to_response(entity)
+
+
+@router.get("", response_model=list[{{ resource_name }}Response])
+{% if async_mode == "async" %}async {% endif %}def list_{{ resource_plural }}(
+    _user: Annotated[User, Depends(get_current_user)],
+    use_case: Annotated[{{ list_class }}, Depends(get_list_{{ resource_plural }})],
+) -> list[{{ resource_name }}Response]:
+    entities = {% if async_mode == "async" %}await {% endif %}use_case.execute()
+    return [_to_response(entity) for entity in entities]
+
+
+@router.get("/{ {{- resource_module -}} _id}", response_model={{ resource_name }}Response)
+{% if async_mode == "async" %}async {% endif %}def get_{{ resource_module }}(
+    {{ resource_module }}_id: UUID,
+    _user: Annotated[User, Depends(get_current_user)],
+    use_case: Annotated[Get{{ resource_name }}, Depends(get_get_{{ resource_module }})],
+) -> {{ resource_name }}Response:
+    entity = {% if async_mode == "async" %}await {% endif %}use_case.execute({{ resource_module }}_id)
+    return _to_response(entity)
+
+
+@router.patch("/{ {{- resource_module -}} _id}", response_model={{ resource_name }}Response)
+{% if async_mode == "async" %}async {% endif %}def update_{{ resource_module }}(
+    {{ resource_module }}_id: UUID,
+    payload: {{ resource_name }}Update,
+    _user: Annotated[User, Depends(get_current_user)],
+    use_case: Annotated[Update{{ resource_name }}, Depends(get_update_{{ resource_module }})],
+) -> {{ resource_name }}Response:
+    entity = {% if async_mode == "async" %}await {% endif %}use_case.execute(
+        {{ resource_module }}_id,
+        payload.model_dump(exclude_unset=True),
+    )
+    return _to_response(entity)
+
+
+@router.delete("/{ {{- resource_module -}} _id}", status_code=204)
+{% if async_mode == "async" %}async {% endif %}def delete_{{ resource_module }}(
+    {{ resource_module }}_id: UUID,
+    _user: Annotated[User, Depends(get_current_user)],
+    use_case: Annotated[Delete{{ resource_name }}, Depends(get_delete_{{ resource_module }})],
+) -> Response:
+    {% if async_mode == "async" %}await {% endif %}use_case.execute({{ resource_module }}_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

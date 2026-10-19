@@ -1,10 +1,30 @@
+{% set router_imports = [
+    ("adapters.api.exception_handlers", "register_exception_handlers"),
+    ("adapters.api.health", "router as health_router"),
+    ("adapters.api.v1.auth", "router as auth_router"),
+] -%}
+{% if include_crud -%}
+{% set _ = router_imports.append(
+    ("adapters.api.v1." ~ resource_plural, "router as " ~ resource_plural ~ "_router")
+) -%}
+{% endif -%}
+{% set router_import_lines = [] -%}
+{% for path, names in router_imports | sort -%}
+{% set line = 'from .' ~ path ~ ' import ' ~ names -%}
+{% if (line | length) <= 88 -%}
+{% set _ = router_import_lines.append(line) -%}
+{% else -%}
+{% set _ = router_import_lines.extend([
+    'from .' ~ path ~ ' import (',
+    '    ' ~ names ~ ',',
+    ')',
+]) -%}
+{% endif -%}
+{% endfor -%}
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .adapters.api.exception_handlers import register_exception_handlers
-from .adapters.api.health import router as health_router
-from .adapters.api.v1.auth import router as auth_router
-from .adapters.api.v1.items import router as items_router
+{{ router_import_lines | join('\n') }}
 from .infrastructure.config.settings import Settings, get_settings
 from .infrastructure.logging.setup import configure_logging
 
@@ -39,8 +59,8 @@ def create_app() -> FastAPI:
     _configure_cors(app, settings)
     register_exception_handlers(app)
     app.include_router(health_router)
-    app.include_router(auth_router, prefix="/api/v1")
-    app.include_router(items_router, prefix="/api/v1")
+    app.include_router(auth_router, prefix="/api/v1"){% if include_crud %}
+    app.include_router({{ resource_plural }}_router, prefix="/api/v1"){% endif %}
     return app
 
 

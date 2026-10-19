@@ -1,0 +1,16 @@
+from typing import Protocol
+from uuid import UUID
+
+from ..entities.{{ resource_module }} import {{ resource_name }}
+
+
+class {{ resource_name }}Repository(Protocol):
+    {% if async_mode == "async" %}async {% endif %}def add(self, entity: {{ resource_name }}) -> {{ resource_name }}: ...
+
+    {% if async_mode == "async" %}async {% endif %}def get_by_id(self, {{ resource_module }}_id: UUID) -> {{ resource_name }} | None: ...
+
+    {% if async_mode == "async" %}async {% endif %}def list_all(self) -> list[{{ resource_name }}]: ...
+
+    {% if async_mode == "async" %}async {% endif %}def update(self, entity: {{ resource_name }}) -> {{ resource_name }}: ...
+
+    {% if async_mode == "async" %}async {% endif %}def delete(self, {{ resource_module }}_id: UUID) -> None: ...

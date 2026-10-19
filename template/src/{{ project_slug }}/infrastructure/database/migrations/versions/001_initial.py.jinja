@@ -1,3 +1,15 @@
+{% import "template/_macros.jinja" as m -%}
+{% set resource_columns = [] -%}
+{% set _ = resource_columns.append('        sa.Column("id", sa.Uuid(), primary_key=True),') -%}
+{% for field in resource_fields -%}
+{% set _ = resource_columns.extend([
+    '        sa.Column(',
+    '            "' ~ field.name ~ '",',
+    '            ' ~ m.sa_type(field) ~ ',',
+    '            nullable=' ~ ('False' if field.required else 'True') ~ ',',
+    '        ),',
+]) -%}
+{% endfor -%}
 """initial schema
 
 Revision ID: 001_initial
@@ -23,13 +35,11 @@ def upgrade() -> None:
         sa.Column("email", sa.String(length=320), nullable=False),
         sa.Column("hashed_password", sa.String(length=255), nullable=False),
     )
-    op.create_index("ix_users_email", "users", ["email"], unique=True)
+    op.create_index("ix_users_email", "users", ["email"], unique=True){% if include_crud %}
     op.create_table(
-        "items",
-        sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("name", sa.String(length=255), nullable=False),
-        sa.Column("description", sa.Text(), nullable=False),
-    )
+        "{{ resource_plural }}",
+{{ resource_columns | join('\n') }}
+    ){% endif %}
     op.create_table(
         "refresh_tokens",
         sa.Column("id", sa.Uuid(), primary_key=True),
@@ -47,7 +57,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index("ix_refresh_tokens_user_id", table_name="refresh_tokens")
-    op.drop_table("refresh_tokens")
-    op.drop_table("items")
+    op.drop_table("refresh_tokens"){% if include_crud %}
+    op.drop_table("{{ resource_plural }}"){% endif %}
     op.drop_index("ix_users_email", table_name="users")
     op.drop_table("users")

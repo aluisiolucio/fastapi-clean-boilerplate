@@ -1,0 +1,80 @@
+{% set to_entity_lines = [] -%}
+{% set _ = to_entity_lines.append('        id=model.id,') -%}
+{% for field in resource_fields -%}
+{% set _ = to_entity_lines.append('        ' ~ field.name ~ '=model.' ~ field.name ~ ',') -%}
+{% endfor -%}
+{% set add_lines = [] -%}
+{% set _ = add_lines.append('            id=entity.id,') -%}
+{% for field in resource_fields -%}
+{% set _ = add_lines.append('            ' ~ field.name ~ '=entity.' ~ field.name ~ ',') -%}
+{% endfor -%}
+{% set update_lines = [] -%}
+{% for field in resource_fields -%}
+{% set _ = update_lines.append('        model.' ~ field.name ~ ' = entity.' ~ field.name) -%}
+{% endfor -%}
+from uuid import UUID
+
+{% if async_mode == "async" -%}
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+{%- else -%}
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+{%- endif %}
+
+from ....domain.entities.{{ resource_module }} import {{ resource_name }}
+from ..models.{{ resource_module }} import {{ resource_name }}Model
+
+
+def _to_entity(model: {{ resource_name }}Model) -> {{ resource_name }}:
+    return {{ resource_name }}(
+{{ to_entity_lines | join('\n') }}
+    )
+
+
+class SqlAlchemy{{ resource_name }}Repository:
+    def __init__(self, session: {% if async_mode == "async" %}AsyncSession{% else %}Session{% endif %}) -> None:
+        self._session = session
+
+    {% if async_mode == "async" %}async {% endif %}def add(self, entity: {{ resource_name }}) -> {{ resource_name }}:
+        model = {{ resource_name }}Model(
+{{ add_lines | join('\n') }}
+        )
+        self._session.add(model)
+        {% if async_mode == "async" %}await {% endif %}self._session.flush()
+        return _to_entity(model)
+
+    {% if async_mode == "async" %}async {% endif %}def get_by_id(self, {{ resource_module }}_id: UUID) -> {{ resource_name }} | None:
+        model = {% if async_mode == "async" %}await {% endif %}self._session.get({{ resource_name }}Model, {{ resource_module }}_id)
+        if model is None:
+            return None
+        return _to_entity(model)
+
+    {% if async_mode == "async" %}async {% endif %}def list_all(self) -> list[{{ resource_name }}]:
+        {% if async_mode == "async" -%}
+        result = await self._session.scalars(select({{ resource_name }}Model))
+        return [_to_entity(model) for model in result.all()]
+        {%- else -%}
+        models = self._session.scalars(select({{ resource_name }}Model)).all()
+        return [_to_entity(model) for model in models]
+        {%- endif %}
+
+    {% if async_mode == "async" %}async {% endif %}def update(self, entity: {{ resource_name }}) -> {{ resource_name }}:
+        model = {% if async_mode == "async" %}await {% endif %}self._session.get({{ resource_name }}Model, entity.id)
+        if model is None:
+            return entity
+{{ update_lines | join('\n') }}
+        {% if async_mode == "async" %}await {% endif %}self._session.flush()
+        return _to_entity(model)
+
+    {% if async_mode == "async" %}async {% endif %}def delete(self, {{ resource_module }}_id: UUID) -> None:
+        model = {% if async_mode == "async" %}await {% endif %}self._session.get({{ resource_name }}Model, {{ resource_module }}_id)
+        if model is None:
+            return
+        {% if async_mode == "async" -%}
+        await self._session.delete(model)
+        await self._session.flush()
+        {%- else -%}
+        self._session.delete(model)
+        self._session.flush()
+        {%- endif %}

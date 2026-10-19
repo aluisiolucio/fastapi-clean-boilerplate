@@ -46,7 +46,23 @@ Não há Makefile.
 
 Access JWT é curto. Refresh é opaco, persistido só como hash. Reuso de refresh já rotacionado revoga todos os tokens do usuário.
 
-CRUD de exemplo: `/api/v1/items` (JWT obrigatório).
+{% if include_crud %}
+## CRUD: {{ resource_name }}
+
+Rota: `/api/v1/{{ resource_plural }}` (JWT obrigatório). Campos além de `id`:
+
+{% for field in resource_fields -%}
+- `{{ field.name }}`: `{{ field.type }}`{% if field.required %} (obrigatório){% else %} (opcional, default `null`){% endif %}{% if field.max_length is defined %}, `max_length={{ field.max_length }}`{% endif %}
+{% endfor %}
+
+`PATCH /api/v1/{{ resource_plural }}/{id}` é parcial: campo omitido não é alterado,
+campo opcional aceita `null` e campo obrigatório com `null` retorna 422.
+{% else %}
+## CRUD
+
+Este projeto foi gerado com `include_crud=false`: apenas autenticação, health e a
+infraestrutura compartilhada estão disponíveis.
+{% endif %}
 
 {% if include_docker %}
 ## Docker

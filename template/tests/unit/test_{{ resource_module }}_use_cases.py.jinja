@@ -1,0 +1,134 @@
+{% import "template/_macros.jinja" as m -%}
+{% set list_class = "List" ~ (resource_plural | title | replace('_', '')) -%}
+{% set required_fields = resource_fields | selectattr('required') | list -%}
+{% set optional_fields = resource_fields | rejectattr('required') | list -%}
+{% set first_field = resource_fields[0] -%}
+{% set datetime_used = (first_field.type == 'datetime') or (required_fields | selectattr('type', 'equalto', 'datetime') | list) -%}
+{% set await_prefix = "await " if async_mode == "async" else "" -%}
+{% set async_prefix = "async " if async_mode == "async" else "" -%}
+{% set use_case_imports = [
+    ("create_" ~ resource_module, "Create" ~ resource_name),
+    ("delete_" ~ resource_module, "Delete" ~ resource_name),
+    ("get_" ~ resource_module, "Get" ~ resource_name),
+    ("list_" ~ resource_plural, list_class),
+    ("update_" ~ resource_module, "Update" ~ resource_name),
+] -%}
+{% set use_case_import_lines = [] -%}
+{% for module, symbol in use_case_imports | sort -%}
+{% set line = 'from ' ~ project_slug ~ '.application.use_cases.' ~ module ~ ' import ' ~ symbol -%}
+{% if (line | length) <= 88 -%}
+{% set _ = use_case_import_lines.append(line) -%}
+{% else -%}
+{% set _ = use_case_import_lines.extend([
+    'from ' ~ project_slug ~ '.application.use_cases.' ~ module ~ ' import (',
+    '    ' ~ symbol ~ ',',
+    ')',
+]) -%}
+{% endif -%}
+{% endfor -%}
+{% set exception_import_lines = [] -%}
+{% set exception_line = 'from ' ~ project_slug ~ '.domain.exceptions import ' ~ resource_name ~ 'NotFoundError' -%}
+{% if (exception_line | length) <= 88 -%}
+{% set _ = exception_import_lines.append(exception_line) -%}
+{% else -%}
+{% set _ = exception_import_lines.extend([
+    'from ' ~ project_slug ~ '.domain.exceptions import (',
+    '    ' ~ resource_name ~ 'NotFoundError,',
+    ')',
+]) -%}
+{% endif -%}
+{% set fakes_import_lines = [] -%}
+{% set fakes_line = 'from tests.unit.fakes import InMemory' ~ resource_name ~ 'Repository' -%}
+{% if (fakes_line | length) <= 88 -%}
+{% set _ = fakes_import_lines.append(fakes_line) -%}
+{% else -%}
+{% set _ = fakes_import_lines.extend([
+    'from tests.unit.fakes import (',
+    '    InMemory' ~ resource_name ~ 'Repository,',
+    ')',
+]) -%}
+{% endif -%}
+{% set create_args_lines = [] -%}
+{% for field in required_fields -%}
+{% set _ = create_args_lines.append('        ' ~ field.name ~ '=' ~ m.sample_py(field) ~ ',') -%}
+{% endfor -%}
+{% if required_fields -%}
+{% set create_call = await_prefix ~ 'Create' ~ resource_name ~ '(repo).execute(\n' ~ (create_args_lines | join('\n')) ~ '\n    )' -%}
+{% else -%}
+{% set create_call = await_prefix ~ 'Create' ~ resource_name ~ '(repo).execute()' -%}
+{% endif -%}
+{% set assert_lines = [] -%}
+{% for field in required_fields -%}
+{% if field.type == 'bool' -%}
+{% set _ = assert_lines.append('    assert stored.' ~ field.name) -%}
+{% else -%}
+{% set _ = assert_lines.append('    assert stored.' ~ field.name ~ ' == ' ~ m.sample_py(field)) -%}
+{% endif -%}
+{% endfor -%}
+{% for field in optional_fields -%}
+{% set _ = assert_lines.append('    assert stored.' ~ field.name ~ ' is None') -%}
+{% endfor -%}
+{% if first_field.type == 'bool' -%}
+{% set updated_assert = '    assert updated.' ~ first_field.name ~ ' is False' -%}
+{% else -%}
+{% set updated_assert = '    assert updated.' ~ first_field.name ~ ' == ' ~ m.sample_py(first_field, true) -%}
+{% endif -%}
+{% set test_blocks = [] -%}
+{% set create_test_lines = [
+    async_prefix ~ 'def test_create_' ~ resource_module ~ '_persists_fields() -> None:',
+    '    repo = InMemory' ~ resource_name ~ 'Repository()',
+    '    entity = ' ~ create_call,
+    '    stored = ' ~ await_prefix ~ 'repo.get_by_id(entity.id)',
+    '    assert stored is not None',
+] -%}
+{% set _ = create_test_lines.extend(assert_lines) -%}
+{% set _ = test_blocks.append(create_test_lines | join('\n')) -%}
+{% set get_test_lines = [
+    async_prefix ~ 'def test_get_' ~ resource_module ~ '_raises_when_missing() -> None:',
+    '    repo = InMemory' ~ resource_name ~ 'Repository()',
+    '    with pytest.raises(',
+    '        ' ~ resource_name ~ 'NotFoundError,',
+    '        match="00000000-0000-0000-0000-000000000001",',
+    '    ):',
+    '        ' ~ await_prefix ~ 'Get' ~ resource_name ~ '(repo).execute(UUID(int=1))',
+] -%}
+{% set _ = test_blocks.append(get_test_lines | join('\n')) -%}
+{% set missing_test_lines = [
+    async_prefix ~ 'def test_update_and_delete_' ~ resource_module ~ '_raise_when_missing() -> None:',
+    '    repo = InMemory' ~ resource_name ~ 'Repository()',
+    '    missing = UUID(int=1)',
+    '    with pytest.raises(' ~ resource_name ~ 'NotFoundError):',
+    '        ' ~ await_prefix ~ 'Update' ~ resource_name ~ '(repo).execute(',
+    '            missing,',
+    '            {"' ~ first_field.name ~ '": ' ~ m.sample_py(first_field, true) ~ '},',
+    '        )',
+    '    with pytest.raises(' ~ resource_name ~ 'NotFoundError):',
+    '        ' ~ await_prefix ~ 'Delete' ~ resource_name ~ '(repo).execute(missing)',
+] -%}
+{% set _ = test_blocks.append(missing_test_lines | join('\n')) -%}
+{% set list_test_lines = [
+    async_prefix ~ 'def test_list_update_and_delete_' ~ resource_module ~ '() -> None:',
+    '    repo = InMemory' ~ resource_name ~ 'Repository()',
+    '    created = ' ~ create_call,
+    '    listed = ' ~ await_prefix ~ list_class ~ '(repo).execute()',
+    '    assert len(listed) == 1',
+    '    updated = ' ~ await_prefix ~ 'Update' ~ resource_name ~ '(repo).execute(',
+    '        created.id,',
+    '        {"' ~ first_field.name ~ '": ' ~ m.sample_py(first_field, true) ~ '},',
+    '    )',
+    updated_assert,
+    '    ' ~ await_prefix ~ 'Delete' ~ resource_name ~ '(repo).execute(created.id)',
+    '    assert ' ~ await_prefix ~ 'repo.get_by_id(created.id) is None',
+] -%}
+{% set _ = test_blocks.append(list_test_lines | join('\n')) -%}
+{% if datetime_used %}from datetime import UTC, datetime
+{% endif %}from uuid import UUID
+
+import pytest
+
+{{ use_case_import_lines | join('\n') }}
+{{ exception_import_lines | join('\n') }}
+{{ fakes_import_lines | join('\n') }}
+
+
+{{ test_blocks | join('\n\n\n') }}

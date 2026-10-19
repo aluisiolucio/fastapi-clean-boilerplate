@@ -1,3 +1,85 @@
+{% set list_class = "List" ~ (resource_plural | title | replace('_', '')) -%}
+{% set use_case_imports = [
+    ("authenticate_user", "AuthenticateUser"),
+    ("get_current_user", "GetCurrentUser"),
+    ("issue_auth_tokens", "IssueAuthTokens"),
+    ("logout_user", "LogoutUser"),
+    ("refresh_auth_tokens", "RefreshAuthTokens"),
+    ("register_user", "RegisterUser"),
+] -%}
+{% if include_crud -%}
+{% set _ = use_case_imports.extend([
+    ("create_" ~ resource_module, "Create" ~ resource_name),
+    ("delete_" ~ resource_module, "Delete" ~ resource_name),
+    ("get_" ~ resource_module, "Get" ~ resource_name),
+    ("list_" ~ resource_plural, list_class),
+    ("update_" ~ resource_module, "Update" ~ resource_name),
+]) -%}
+{% endif -%}
+{% set use_case_import_lines = [] -%}
+{% for module, symbol in use_case_imports | sort -%}
+{% set line = 'from ...application.use_cases.' ~ module ~ ' import ' ~ symbol -%}
+{% if (line | length) <= 88 -%}
+{% set _ = use_case_import_lines.append(line) -%}
+{% else -%}
+{% set _ = use_case_import_lines.extend([
+    'from ...application.use_cases.' ~ module ~ ' import (',
+    '    ' ~ symbol ~ ',',
+    ')',
+]) -%}
+{% endif -%}
+{% endfor -%}
+{% set repository_imports = [
+    ("refresh_token_repository", "SqlAlchemyRefreshTokenRepository"),
+    ("user_repository", "SqlAlchemyUserRepository"),
+] -%}
+{% if include_crud -%}
+{% set _ = repository_imports.append(
+    (resource_module ~ "_repository", "SqlAlchemy" ~ resource_name ~ "Repository")
+) -%}
+{% endif -%}
+{% set repository_import_lines = [] -%}
+{% for module, symbol in repository_imports | sort -%}
+{% set line = 'from ...infrastructure.database.repositories.' ~ module ~ ' import ' ~ symbol -%}
+{% if (line | length) <= 88 -%}
+{% set _ = repository_import_lines.append(line) -%}
+{% else -%}
+{% set _ = repository_import_lines.extend([
+    'from ...infrastructure.database.repositories.' ~ module ~ ' import (',
+    '    ' ~ symbol ~ ',',
+    ')',
+]) -%}
+{% endif -%}
+{% endfor -%}
+{% set resource_repository_def = 'def get_' ~ resource_module ~ '_repository(session: SessionDep) -> SqlAlchemy' ~ resource_name ~ 'Repository:' -%}
+{% if (resource_repository_def | length) <= 88 -%}
+{% set resource_repository_getter = resource_repository_def ~ '\n    return SqlAlchemy' ~ resource_name ~ 'Repository(session)' -%}
+{% else -%}
+{% set resource_repository_getter = 'def get_' ~ resource_module ~ '_repository(\n    session: SessionDep,\n) -> SqlAlchemy' ~ resource_name ~ 'Repository:\n    return SqlAlchemy' ~ resource_name ~ 'Repository(session)' -%}
+{% endif -%}
+{% set crud_getters = [] -%}
+{% if include_crud -%}
+{% set crud_specs = [
+    ("create", "Create" ~ resource_name),
+    ("get", "Get" ~ resource_name),
+    ("list", list_class),
+    ("update", "Update" ~ resource_name),
+    ("delete", "Delete" ~ resource_name),
+] -%}
+{% for kind, class_name in crud_specs -%}
+{% set getter_name = 'get_' ~ kind ~ '_' ~ (resource_plural if kind == 'list' else resource_module) -%}
+{% set _ = crud_getters.append(
+    'def ' ~ getter_name ~ '(\n'
+    ~ '    repositories: Annotated[\n'
+    ~ '        SqlAlchemy' ~ resource_name ~ 'Repository,\n'
+    ~ '        Depends(get_' ~ resource_module ~ '_repository),\n'
+    ~ '    ],\n'
+    ~ ') -> ' ~ class_name ~ ':\n'
+    ~ '    return ' ~ class_name ~ '(repositories)'
+) -%}
+{% endfor -%}
+{% endif -%}
+{% set crud_block = crud_getters | join('\n\n\n') -%}
 from typing import Annotated
 
 from fastapi import Depends
@@ -8,32 +90,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 {%- endif %}
 
-from ...application.use_cases.authenticate_user import AuthenticateUser
-from ...application.use_cases.create_item import CreateItem
-from ...application.use_cases.delete_item import DeleteItem
-from ...application.use_cases.get_current_user import GetCurrentUser
-from ...application.use_cases.get_item import GetItem
-from ...application.use_cases.issue_auth_tokens import IssueAuthTokens
-from ...application.use_cases.list_items import ListItems
-from ...application.use_cases.logout_user import LogoutUser
-from ...application.use_cases.refresh_auth_tokens import RefreshAuthTokens
-from ...application.use_cases.register_user import RegisterUser
-from ...application.use_cases.update_item import UpdateItem
+{{ use_case_import_lines | join('\n') }}
 from ...domain.entities.user import User
 from ...infrastructure.auth.jwt_token_service import JwtTokenService
 from ...infrastructure.auth.pwdlib_hasher import PwdlibPasswordHasher
 from ...infrastructure.auth.refresh_token_generator import SecureRefreshTokenGenerator
 from ...infrastructure.auth.sha256_token_hasher import Sha256TokenHasher
 from ...infrastructure.config.settings import Settings, get_settings
-from ...infrastructure.database.repositories.item_repository import (
-    SqlAlchemyItemRepository,
-)
-from ...infrastructure.database.repositories.refresh_token_repository import (
-    SqlAlchemyRefreshTokenRepository,
-)
-from ...infrastructure.database.repositories.user_repository import (
-    SqlAlchemyUserRepository,
-)
+{{ repository_import_lines | join('\n') }}
 from ...infrastructure.database.session import get_session
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
@@ -51,11 +115,7 @@ def _token_hasher() -> Sha256TokenHasher:
 
 
 def get_user_repository(session: SessionDep) -> SqlAlchemyUserRepository:
-    return SqlAlchemyUserRepository(session)
-
-
-def get_item_repository(session: SessionDep) -> SqlAlchemyItemRepository:
-    return SqlAlchemyItemRepository(session)
+    return SqlAlchemyUserRepository(session){{ ('\n\n\n' ~ resource_repository_getter) if include_crud else '' }}
 
 
 def get_refresh_token_repository(
@@ -134,34 +194,4 @@ def get_current_user_use_case(
     token: Annotated[str, Depends(oauth2_scheme)],
     use_case: Annotated[GetCurrentUser, Depends(get_current_user_use_case)],
 ) -> User:
-    return {% if async_mode == "async" %}await {% endif %}use_case.execute(token)
-
-
-def get_create_item(
-    items: Annotated[SqlAlchemyItemRepository, Depends(get_item_repository)],
-) -> CreateItem:
-    return CreateItem(items)
-
-
-def get_get_item(
-    items: Annotated[SqlAlchemyItemRepository, Depends(get_item_repository)],
-) -> GetItem:
-    return GetItem(items)
-
-
-def get_list_items(
-    items: Annotated[SqlAlchemyItemRepository, Depends(get_item_repository)],
-) -> ListItems:
-    return ListItems(items)
-
-
-def get_update_item(
-    items: Annotated[SqlAlchemyItemRepository, Depends(get_item_repository)],
-) -> UpdateItem:
-    return UpdateItem(items)
-
-
-def get_delete_item(
-    items: Annotated[SqlAlchemyItemRepository, Depends(get_item_repository)],
-) -> DeleteItem:
-    return DeleteItem(items)
+    return {% if async_mode == "async" %}await {% endif %}use_case.execute(token){{ ('\n\n\n' ~ crud_block) if include_crud else '' }}

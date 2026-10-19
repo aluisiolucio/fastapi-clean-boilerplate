@@ -1,9 +1,30 @@
 _min_copier_version: "9.0.0"
 _subdirectory: template
 _answers_file: .copier-answers.yml
+_exclude:
+  - "_macros"
+  - |
+    {% if not include_crud -%}
+    src/{{ project_slug }}/domain/entities/{{ resource_module }}.py
+    src/{{ project_slug }}/domain/interfaces/{{ resource_module }}_repository.py
+    src/{{ project_slug }}/application/use_cases/create_{{ resource_module }}.py
+    src/{{ project_slug }}/application/use_cases/delete_{{ resource_module }}.py
+    src/{{ project_slug }}/application/use_cases/get_{{ resource_module }}.py
+    src/{{ project_slug }}/application/use_cases/list_{{ resource_plural }}.py
+    src/{{ project_slug }}/application/use_cases/update_{{ resource_module }}.py
+    src/{{ project_slug }}/adapters/api/v1/schemas/{{ resource_module }}.py
+    src/{{ project_slug }}/adapters/api/v1/{{ resource_plural }}.py
+    src/{{ project_slug }}/infrastructure/database/models/{{ resource_module }}.py
+    src/{{ project_slug }}/infrastructure/database/repositories/{{ resource_module }}_repository.py
+    tests/unit/test_{{ resource_module }}_use_cases.py
+    tests/integration/test_{{ resource_plural }}.py
+    {%- endif %}
 
 _message_after_copy: |
   Projeto "{{ project_name }}" gerado em {{ _copier_conf.dst_path }}.
+  {% if include_crud %}
+  CRUD inicial: {{ resource_name }} em /api/v1/{{ resource_plural }}.
+  {% endif %}
 
   Próximos passos:
 
@@ -57,3 +78,101 @@ include_docker:
   type: bool
   help: Incluir Dockerfile e docker-compose.yml
   default: true
+
+include_crud:
+  type: bool
+  help: Incluir um CRUD inicial para uma entidade
+  default: true
+
+resource_name:
+  type: str
+  help: Nome da entidade no singular, em PascalCase (ex. Product)
+  default: Item
+  when: "{{ include_crud }}"
+  validator: >-
+    {% set module = resource_name | regex_replace('(?<!^)(?=[A-Z])', '_') | lower %}
+    {% if not (resource_name | regex_search('^[A-Z][A-Za-z0-9]*$')) %}
+    Use PascalCase: comece com maiúscula e use apenas letras e dígitos (ex. Product).
+    {% elif (resource_name | length) > 16 %}
+    Use no máximo 16 caracteres no nome da entidade.
+    {% elif (module | length) > 16 %}
+    O nome gerado para o módulo é longo demais. Use um nome mais curto.
+    {% elif resource_name in ['User', 'RefreshToken', 'Base', 'Health', 'Auth', 'Settings'] %}
+    Esse nome é reservado pelo template. Escolha outro.
+    {% endif %}
+
+resource_module:
+  type: str
+  when: false
+  default: "{{ resource_name | regex_replace('(?<!^)(?=[A-Z])', '_') | lower }}"
+
+resource_plural:
+  type: str
+  help: Nome da rota e da tabela no plural, em snake_case (ex. products)
+  default: "{{ resource_module }}s"
+  when: "{{ include_crud }}"
+  validator: >-
+    {% if not (resource_plural | regex_search('^[a-z][a-z0-9_]*$')) %}
+    Use snake_case: letras minúsculas, dígitos e underscore; comece com letra.
+    {% elif (resource_plural | length) > 40 %}
+    Use no máximo 40 caracteres no plural.
+    {% elif resource_plural in ['users', 'refresh_tokens', 'alembic_version', 'auth', 'health', 'docs'] %}
+    Esse nome de rota/tabela é reservado pelo template. Escolha outro.
+    {% endif %}
+
+resource_fields:
+  type: yaml
+  help: |
+    Campos do recurso, além de id. Cada item deve ter name, type e required.
+    Tipos: str, text, int, float, bool, datetime, uuid.
+    max_length é opcional para str/text.
+  default:
+    - name: name
+      type: str
+      required: true
+      max_length: 255
+    - name: description
+      type: text
+      required: false
+      max_length: 5000
+  when: "{{ include_crud }}"
+  validator: >-
+    {% set allowed_types = ['str', 'text', 'int', 'float', 'bool', 'datetime', 'uuid'] %}
+    {% set reserved_fields = ['id', 'metadata', 'registry', 'self', 'cls', 'class', 'def', 'return', 'import', 'from', 'global', 'nonlocal', 'lambda', 'pass', 'raise', 'try', 'except', 'finally', 'with', 'as', 'assert', 'async', 'await', 'yield', 'del', 'in', 'is', 'not', 'and', 'or', 'if', 'elif', 'else', 'while', 'for', 'break', 'continue', 'true', 'false', 'none'] %}
+    {% if resource_fields is not sequence or resource_fields is string or resource_fields is mapping %}
+    resource_fields deve ser uma lista YAML.
+    {% elif resource_fields | length == 0 %}
+    Informe ao menos um campo.
+    {% else %}
+    {% set seen = [] %}
+    {% set seen_aliases = [] %}
+    {% for field in resource_fields %}
+    {% if field is not mapping %}
+    Cada campo deve ser um mapa com name, type e required.
+    {% elif field.name is not defined or field.name is not string or not (field.name | regex_search('^[a-z][a-z0-9_]*$')) %}
+    Nome de campo inválido: {{ field.name | default('?') }}. Use snake_case.
+    {% elif (field.name | length) > 32 %}
+    Nome de campo longo demais: {{ field.name }} (máximo 32 caracteres).
+    {% elif field.name in reserved_fields or field.name.startswith('model_') %}
+    Nome de campo reservado: {{ field.name }}.
+    {% elif field.name in seen %}
+    Nome de campo duplicado: {{ field.name }}.
+    {% elif field.type is not defined or field.type not in allowed_types %}
+    Tipo inválido em {{ field.name }}. Use: str, text, int, float, bool, datetime, uuid.
+    {% elif field.required is not defined or field.required is not boolean %}
+    Informe required: true ou false em {{ field.name }}.
+    {% elif field.type in ['str', 'text'] and field.max_length is defined and (field.max_length is boolean or field.max_length is not integer or field.max_length < 1) %}
+    max_length de {{ field.name }} deve ser um inteiro positivo.
+    {% elif field.type not in ['str', 'text'] and field.max_length is defined %}
+    max_length só é permitido em campos str/text.
+    {% elif field.type in ['str', 'text'] and field.max_length is defined and (field.name | title | replace('_', '')) in seen_aliases %}
+    Campos {{ field.name }} e outro anterior geram o mesmo tipo de validação. Use nomes de campo mais distintos.
+    {% endif %}
+    {% if field is mapping and field.name is defined %}
+    {% set _ = seen.append(field.name) %}
+    {% if field.type in ['str', 'text'] and field.max_length is defined %}
+    {% set _ = seen_aliases.append(field.name | title | replace('_', '')) %}
+    {% endif %}
+    {% endif %}
+    {% endfor %}
+    {% endif %}

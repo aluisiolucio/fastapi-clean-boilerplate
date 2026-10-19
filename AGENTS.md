@@ -11,6 +11,8 @@ na raiz. O projeto gerado vive em `template/` e usa `{{ project_slug }}`.
 - FastAPI, pydantic-settings, SQLAlchemy 2, Alembic, `psycopg[binary]`
 - Ruff (inclui regra `I`), ty `~=0.0.80`, pytest, poethepoet
 - JWT (PyJWT) + refresh opaco persistido (hash SHA-256, rotação, reuse detection)
+- CRUD inicial configurável em tempo de cópia (`include_crud`, `resource_name`,
+  `resource_plural`, `resource_fields`); default `Item` / `items`
 - Testes de integração: `testcontainers[postgres]` com `driver="psycopg"` (nunca o
   default `psycopg2`)
 
@@ -21,12 +23,24 @@ na raiz. O projeto gerado vive em `template/` e usa `{{ project_slug }}`.
 - Clean Architecture clássica, não Hexagonal: `domain` → `application` → `adapters`
   → `infrastructure`. Contratos são `typing.Protocol` em `domain/interfaces/`, não ABC
   e não "ports".
-- Única variação do template: `async_mode` `sync` | `async`. Mesma URL
-  `postgresql+psycopg://`; muda `create_engine` vs `create_async_engine`.
+- Variações do template: `async_mode` (`sync` | `async`), `include_docker` e
+  `include_crud`. Mesma URL `postgresql+psycopg://`; no modo async muda
+  `create_engine` vs `create_async_engine`.
 - Proibido: isort, psycopg2, asyncpg, pre-commit, mkdocs, Makefile.
-- Arquivos que dependem de `async_mode` ou `project_slug` usam sufixo `.jinja`.
+- Arquivos que dependem de `async_mode`, `project_slug`, `include_crud` ou nomes de
+  recurso usam sufixo `.jinja` quando o conteúdo é condicional.
 - Docker é condicional (`include_docker`). Nomes
   `{% if include_docker %}Dockerfile{% endif %}.jinja`.
+- CRUD: `resource_name` define classes; `resource_plural` define rota/tabela;
+  `resource_module` é derivado e define arquivos/variáveis/atributos. Tipos v1:
+  `str`, `text`, `int`, `float`, `bool`, `datetime`, `uuid`; opcionais `required`
+  e `max_length` (só str/text). Fora do escopo: relações, unique, enums, JSON,
+  defaults por campo e owner.
+- Geração Jinja deve sair formatada. Prefira listas de linhas pré-computadas +
+  `join('\n')` para loops; `-%}` remove a indentação do corpo do loop. Imports
+  longos são quebrados condicionalmente conforme o limite de 88 colunas.
+- `PATCH` usa `model_dump(exclude_unset=True)`: omitido não altera, opcional aceita
+  `null`, obrigatório com `null` retorna 422.
 - Docs gerados (README, AGENTS.md) em português; identificadores de código em inglês.
 - JWT funcional: access curto + refresh persistido. Não simplificar para só access.
 - Erros de domínio que precisam persistir alterações herdam de `CommitRequiredError`;

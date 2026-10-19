@@ -1,3 +1,10 @@
+{% set crud_exception = '' -%}
+{% if include_crud -%}
+{% set crud_exception = 'class ' ~ resource_name ~ 'NotFoundError(DomainError):\n'
+    ~ '    def __init__(self, ' ~ resource_module ~ '_id: object) -> None:\n'
+    ~ '        super().__init__(f"' ~ resource_module ~ ' not found: {' ~ resource_module ~ '_id}")\n'
+    ~ '        self.' ~ resource_module ~ '_id = ' ~ resource_module ~ '_id\n\n\n' -%}
+{% endif -%}
 """Expected business failures raised by use cases."""
 
 
@@ -9,13 +16,7 @@ class CommitRequiredError(DomainError):
     """Failure whose pending changes must be committed before propagating."""
 
 
-class ItemNotFoundError(DomainError):
-    def __init__(self, item_id: object) -> None:
-        super().__init__(f"item not found: {item_id}")
-        self.item_id = item_id
-
-
-class EmailAlreadyExistsError(DomainError):
+{{ crud_exception }}class EmailAlreadyExistsError(DomainError):
     def __init__(self, email: str) -> None:
         super().__init__(f"email already registered: {email}")
         self.email = email

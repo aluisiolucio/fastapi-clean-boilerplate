@@ -16,6 +16,15 @@ e o versionamento segue [Semantic Versioning](https://semver.org/lang/pt-BR/).
   antes de propagar, com teste de regressão do reuso de refresh token.
 - Licença Apache-2.0 completa, selecionável via `license`, declarada no
   `pyproject.toml` e incluída na imagem Docker.
+- CRUD inicial configurável em tempo de cópia: `include_crud`, `resource_name`,
+  `resource_plural` e `resource_fields`, com validação de nomes, tipos, campos
+  reservados e limites de tamanho.
+- Tipos suportados no CRUD v1: `str`, `text`, `int`, `float`, `bool`, `datetime`
+  e `uuid`; `required` e `max_length` (apenas strings) por campo.
+- `include_crud=false` gera o projeto apenas com auth, health e infraestrutura
+  compartilhada, sem entidade, use cases, rota, tabela ou testes de CRUD.
+- `PATCH` parcial com `model_dump(exclude_unset=True)`: campo omitido não muda,
+  opcional aceita `null` e obrigatório com `null` retorna 422.
 
 ### Corrigido
 
@@ -38,6 +47,11 @@ e o versionamento segue [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ### Alterado
 
+- CRUD deixou de ser fixo em `Item`: os arquivos, classes, rotas e tabelas agora são
+  gerados a partir de `resource_name`, `resource_plural` e `resource_fields`,
+  preservando `Item`/`items` como default.
+- Campos opcionais de string passam a gerar `str | None` no domínio e no schema de
+  resposta (antes, string opcional era tratada sem `None`).
 - Documentação de uso, validação e atualização do template revisada, incluindo
   o uso de caminho absoluto em cópias locais para não quebrar `copier update`.
 - Dependências e tarefas Poe alinhadas entre as variantes sync e async.

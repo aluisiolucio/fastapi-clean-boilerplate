@@ -1,0 +1,43 @@
+{% set exception_names = [
+    "DomainError",
+    "EmailAlreadyExistsError",
+    "InvalidCredentialsError",
+    "InvalidTokenError",
+    "RefreshTokenReuseError",
+] -%}
+{% if include_crud -%}
+{% set _ = exception_names.append(resource_name ~ "NotFoundError") -%}
+{% endif -%}
+{% set exception_import_lines = [] -%}
+{% for name in exception_names | sort -%}
+{% set _ = exception_import_lines.append('    ' ~ name ~ ',') -%}
+{% endfor -%}
+{% set status_lines = [] -%}
+{% if include_crud -%}
+{% set _ = status_lines.append('    ' ~ resource_name ~ 'NotFoundError: 404,') -%}
+{% endif -%}
+{% set _ = status_lines.extend([
+    '    EmailAlreadyExistsError: 409,',
+    '    InvalidCredentialsError: 401,',
+    '    InvalidTokenError: 401,',
+    '    RefreshTokenReuseError: 401,',
+]) -%}
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+
+from ...domain.exceptions import (
+{{ exception_import_lines | join('\n') }}
+)
+
+_STATUS: dict[type[DomainError], int] = {
+{{ status_lines | join('\n') }}
+}
+
+
+def register_exception_handlers(app: FastAPI) -> None:
+    app.add_exception_handler(DomainError, _domain_error_handler)
+
+
+async def _domain_error_handler(_request: Request, exc: Exception) -> JSONResponse:
+    status = _STATUS.get(type(exc), 400)
+    return JSONResponse(status_code=status, content={"detail": str(exc)})

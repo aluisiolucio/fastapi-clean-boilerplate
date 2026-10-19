@@ -1,0 +1,131 @@
+{% import "template/_macros.jinja" as m -%}
+{% set required_fields = resource_fields | selectattr('required') | list -%}
+{% set optional_fields = resource_fields | rejectattr('required') | list -%}
+{% set str_fields = resource_fields | selectattr('type', 'equalto', 'str') | list -%}
+{% set first_field = resource_fields[0] -%}
+{% set first_str = str_fields[0] if str_fields else None -%}
+{% set await_prefix = "await " if async_mode == "async" else "" -%}
+{% set async_prefix = "async " if async_mode == "async" else "" -%}
+{% set create_json_lines = [] -%}
+{% for field in resource_fields -%}
+{% set _ = create_json_lines.append('            "' ~ field.name ~ '": ' ~ m.sample_literal(field) ~ ',') -%}
+{% endfor -%}
+{% set create_json_block = [] -%}
+{% set _ = create_json_block.append('        json={') -%}
+{% set _ = create_json_block.extend(create_json_lines) -%}
+{% set _ = create_json_block.append('        },') -%}
+{% set unchanged_optional = [] -%}
+{% for field in optional_fields if field.name != first_field.name -%}
+{% set _ = unchanged_optional.append(field) -%}
+{% endfor -%}
+{% set extra_patch_lines = [] -%}
+{% if unchanged_optional -%}
+{% set _ = extra_patch_lines.extend([
+    '    unchanged_field = "' ~ unchanged_optional[0].name ~ '"',
+    '    assert patched.json()[unchanged_field] == created.json()[unchanged_field]',
+]) -%}
+{% endif -%}
+{% if required_fields -%}
+{% set _ = extra_patch_lines.extend([
+    '    required_field = "' ~ required_fields[0].name ~ '"',
+    '    rejected = ' ~ await_prefix ~ 'client.patch(',
+    '        f"/api/v1/' ~ resource_plural ~ '/{entity_id}",',
+    '        json={required_field: None},',
+    '        headers=headers,',
+    '    )',
+    '    assert rejected.status_code == 422',
+]) -%}
+{% endif -%}
+{% if optional_fields -%}
+{% set _ = extra_patch_lines.extend([
+    '    optional_field = "' ~ optional_fields[0].name ~ '"',
+    '    cleared = ' ~ await_prefix ~ 'client.patch(',
+    '        f"/api/v1/' ~ resource_plural ~ '/{entity_id}",',
+    '        json={optional_field: None},',
+    '        headers=headers,',
+    '    )',
+    '    assert cleared.status_code == 200',
+    '    assert cleared.json()[optional_field] is None',
+]) -%}
+{% endif -%}
+{% set extra_patch_block = extra_patch_lines | join('\n') -%}
+{% set blank_test = '' -%}
+{% if first_str -%}
+{% set blank_json_lines = [] -%}
+{% set _ = blank_json_lines.append('            "' ~ first_str.name ~ '": "   ",') -%}
+{% for field in required_fields if field.name != first_str.name -%}
+{% set _ = blank_json_lines.append('            "' ~ field.name ~ '": ' ~ m.sample_literal(field) ~ ',') -%}
+{% endfor -%}
+{% set blank_test_lines = [
+    async_prefix ~ 'def test_' ~ resource_module ~ '_rejects_blank_' ~ first_str.name ~ '(client) -> None:',
+    '    headers = ' ~ await_prefix ~ '_auth_header(client, "blank@example.com")',
+    '    response = ' ~ await_prefix ~ 'client.post(',
+    '        "/api/v1/' ~ resource_plural ~ '",',
+    '        json={',
+] -%}
+{% set _ = blank_test_lines.extend(blank_json_lines) -%}
+{% set _ = blank_test_lines.extend([
+    '        },',
+    '        headers=headers,',
+    '    )',
+    '    assert response.status_code == 422',
+]) -%}
+{% set blank_test = blank_test_lines | join('\n') ~ '\n\n\n' -%}
+{% endif -%}
+PASSWORD = "s3cret-password"
+
+
+{% if async_mode == "async" %}async {% endif %}def _auth_header(client, email: str) -> dict[str, str]:
+    register = {% if async_mode == "async" %}await {% endif %}client.post(
+        "/api/v1/auth/register",
+        json={"email": email, "password": PASSWORD},
+    )
+    assert register.status_code == 201
+    login = {% if async_mode == "async" %}await {% endif %}client.post(
+        "/api/v1/auth/token",
+        data={"username": email, "password": PASSWORD},
+    )
+    token = login.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+{% if async_mode == "async" %}async {% endif %}def test_{{ resource_plural }}_require_authentication(client) -> None:
+    response = {% if async_mode == "async" %}await {% endif %}client.get("/api/v1/{{ resource_plural }}")
+    assert response.status_code == 401
+
+
+{{ blank_test }}{% if async_mode == "async" %}async {% endif %}def test_{{ resource_module }}_crud(client) -> None:
+    headers = {% if async_mode == "async" %}await {% endif %}_auth_header(client, "owner@example.com")
+    first_field = "{{ first_field.name }}"
+    created = {% if async_mode == "async" %}await {% endif %}client.post(
+        "/api/v1/{{ resource_plural }}",
+{{ create_json_block | join('\n') }}
+        headers=headers,
+    )
+    assert created.status_code == 201
+    entity_id = created.json()["id"]
+    listed = {% if async_mode == "async" %}await {% endif %}client.get("/api/v1/{{ resource_plural }}", headers=headers)
+    assert listed.status_code == 200
+    assert len(listed.json()) == 1
+    fetched = {% if async_mode == "async" %}await {% endif %}client.get(
+        f"/api/v1/{{ resource_plural }}/{entity_id}",
+        headers=headers,
+    )
+    assert fetched.json()[first_field] == created.json()[first_field]
+    patched = {% if async_mode == "async" %}await {% endif %}client.patch(
+        f"/api/v1/{{ resource_plural }}/{entity_id}",
+        json={first_field: {{ m.sample_literal(first_field, true) }}},
+        headers=headers,
+    )
+    assert patched.status_code == 200
+    assert patched.json()[first_field] != created.json()[first_field]{{ ('\n' ~ extra_patch_block) if extra_patch_block else '' }}
+    deleted = {% if async_mode == "async" %}await {% endif %}client.delete(
+        f"/api/v1/{{ resource_plural }}/{entity_id}",
+        headers=headers,
+    )
+    assert deleted.status_code == 204
+    missing = {% if async_mode == "async" %}await {% endif %}client.get(
+        f"/api/v1/{{ resource_plural }}/{entity_id}",
+        headers=headers,
+    )
+    assert missing.status_code == 404

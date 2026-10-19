@@ -61,6 +61,21 @@
   `application/use_cases`, `adapters/api/v1`, `infrastructure/database`,
   `infrastructure/config`, `infrastructure/logging`, `infrastructure/auth`.
 
+## CRUD de exemplo
+
+- Com `include_crud=true`, o projeto nasce com uma entidade e um CRUD completo.
+  O nome da entidade define as classes; o plural define a rota e a tabela; o
+  módulo derivado define arquivos, variáveis e atributos.
+- Os campos vêm de `resource_fields`. A v1 suporta `str`, `text`, `int`, `float`,
+  `bool`, `datetime` e `uuid`, com `required` e `max_length` (apenas strings).
+- Mantenha o fluxo `domain` → `application` → `adapters` → `infrastructure`
+  também ao evoluir o CRUD: entidade e `Protocol` no domínio, use cases na
+  aplicação, schemas/rotas nos adapters e SQLAlchemy na infraestrutura.
+- `PATCH` usa `model_dump(exclude_unset=True)`: campo omitido não muda, opcional
+  aceita `null` e obrigatório com `null` retorna 422.
+- Com `include_crud=false`, não existem entidade, use cases, rota, tabela ou
+  testes do CRUD; auth e health continuam disponíveis.
+
 ## Formatação
 
 - Use o formatter padrão do projeto: `ruff format` (lint com `ruff check --fix`).

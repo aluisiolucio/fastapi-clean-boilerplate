@@ -1,0 +1,71 @@
+{% import "template/_macros.jinja" as m -%}
+{% set has_datetime = resource_fields | selectattr('type', 'equalto', 'datetime') | list -%}
+{% set has_constraints = resource_fields | selectattr('type', 'equalto', 'str') | list -%}
+{% set text_with_max = resource_fields | selectattr('type', 'equalto', 'text') | selectattr('max_length') | list -%}
+{% set required_fields = resource_fields | selectattr('required') | list -%}
+{% set schema_lines = [] -%}
+{% for field in resource_fields -%}
+{% if field.type == 'str' or (field.type == 'text' and field.max_length) -%}
+{% set alias = m.alias_name(field) -%}
+{% if field.type == 'str' -%}
+{% set constraints = 'strip_whitespace=True, min_length=1, max_length=' ~ (field.max_length | default(255)) -%}
+{% else -%}
+{% set constraints = 'max_length=' ~ field.max_length -%}
+{% endif -%}
+{% set expr = 'Annotated[str, StringConstraints(' ~ constraints ~ ')]' -%}
+{% set one_line = alias ~ ' = ' ~ expr -%}
+{% if (one_line | length) <= 88 -%}
+{% set _ = schema_lines.append(one_line) -%}
+{% else -%}
+{% set _ = schema_lines.extend([
+    alias ~ ' = Annotated[',
+    '    str, StringConstraints(' ~ constraints ~ ')',
+    ']',
+]) -%}
+{% endif -%}
+{% endif -%}
+{% endfor -%}
+{% if schema_lines -%}
+{% set _ = schema_lines.extend(['', '']) -%}
+{% endif -%}
+{% set _ = schema_lines.append('class ' ~ resource_name ~ 'Create(BaseModel):') -%}
+{% for field in resource_fields -%}
+{% set _ = schema_lines.append('    ' ~ field.name ~ ': ' ~ m.pydantic_type(field) ~ (' | None = None' if not field.required else '')) -%}
+{% endfor -%}
+{% set _ = schema_lines.extend(['', '']) -%}
+{% set _ = schema_lines.append('class ' ~ resource_name ~ 'Update(BaseModel):') -%}
+{% for field in resource_fields -%}
+{% set _ = schema_lines.append('    ' ~ field.name ~ ': ' ~ m.pydantic_type(field) ~ ' | None = None') -%}
+{% endfor -%}
+{% if required_fields -%}
+{% set _ = schema_lines.append('') -%}
+{% set _ = schema_lines.append('    @model_validator(mode="after")') -%}
+{% set _ = schema_lines.append('    def _reject_null_required(self) -> "' ~ resource_name ~ 'Update":') -%}
+{% for field in required_fields -%}
+{% set condition = '        if "' ~ field.name ~ '" in self.model_fields_set and self.' ~ field.name ~ ' is None:' -%}
+{% if (condition | length) <= 88 -%}
+{% set _ = schema_lines.append(condition) -%}
+{% else -%}
+{% set _ = schema_lines.extend([
+    '        if (',
+    '            "' ~ field.name ~ '" in self.model_fields_set',
+    '            and self.' ~ field.name ~ ' is None',
+    '        ):',
+]) -%}
+{% endif -%}
+{% set _ = schema_lines.append('            raise ValueError("' ~ field.name ~ ' cannot be null")') -%}
+{% endfor -%}
+{% set _ = schema_lines.append('        return self') -%}
+{% endif -%}
+{% set _ = schema_lines.extend(['', '']) -%}
+{% set _ = schema_lines.append('class ' ~ resource_name ~ 'Response(BaseModel):') -%}
+{% set _ = schema_lines.append('    id: UUID') -%}
+{% for field in resource_fields -%}
+{% set _ = schema_lines.append('    ' ~ field.name ~ ': ' ~ m.py_type(field) ~ (' | None' if not field.required else '')) -%}
+{% endfor -%}
+{% if has_datetime %}from datetime import datetime
+{% endif %}{% if has_constraints or text_with_max %}from typing import Annotated
+{% endif %}from uuid import UUID
+
+from pydantic import BaseModel{% if has_constraints or text_with_max %}, StringConstraints{% endif %}{% if required_fields %}, model_validator{% endif %}
+{{ '\n' if (has_constraints or text_with_max) else '\n\n' }}{{ schema_lines | join('\n') }}

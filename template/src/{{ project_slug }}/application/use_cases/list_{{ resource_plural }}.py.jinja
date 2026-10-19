@@ -1,0 +1,12 @@
+from ...domain.entities.{{ resource_module }} import {{ resource_name }}
+from ...domain.interfaces.{{ resource_module }}_repository import {{ resource_name }}Repository
+
+
+class List{{ resource_plural | title | replace('_', '') }}:
+    """Returns every stored {{ resource_module }}."""
+
+    def __init__(self, repository: {{ resource_name }}Repository) -> None:
+        self._repository = repository
+
+    {% if async_mode == "async" %}async {% endif %}def execute(self) -> list[{{ resource_name }}]:
+        return {% if async_mode == "async" %}await {% endif %}self._repository.list_all()

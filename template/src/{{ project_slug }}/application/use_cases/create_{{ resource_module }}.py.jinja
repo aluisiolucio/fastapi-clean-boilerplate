@@ -1,0 +1,38 @@
+{% import "template/_macros.jinja" as m -%}
+{% set required_fields = resource_fields | selectattr('required') | list -%}
+{% set optional_fields = resource_fields | rejectattr('required') | list -%}
+{% set has_datetime = resource_fields | selectattr('type', 'equalto', 'datetime') | list -%}
+{% set has_uuid = resource_fields | selectattr('type', 'equalto', 'uuid') | list -%}
+{% set signature_lines = [] -%}
+{% for field in required_fields -%}
+{% set _ = signature_lines.append('        ' ~ field.name ~ ': ' ~ m.py_type(field) ~ ',') -%}
+{% endfor -%}
+{% for field in optional_fields -%}
+{% set _ = signature_lines.append('        ' ~ field.name ~ ': ' ~ m.py_type(field) ~ ' | None = None,') -%}
+{% endfor -%}
+{% set entity_arg_lines = [] -%}
+{% for field in resource_fields -%}
+{% set _ = entity_arg_lines.append('            ' ~ field.name ~ '=' ~ field.name ~ ',') -%}
+{% endfor -%}
+{% if has_datetime %}from datetime import datetime
+{% endif %}from uuid import {% if has_uuid %}UUID, {% endif %}uuid4
+
+from ...domain.entities.{{ resource_module }} import {{ resource_name }}
+from ...domain.interfaces.{{ resource_module }}_repository import {{ resource_name }}Repository
+
+
+class Create{{ resource_name }}:
+    """Persists a new {{ resource_module }}."""
+
+    def __init__(self, repository: {{ resource_name }}Repository) -> None:
+        self._repository = repository
+
+    {% if async_mode == "async" %}async {% endif %}def execute(
+        self,
+{{ signature_lines | join('\n') }}
+    ) -> {{ resource_name }}:
+        entity = {{ resource_name }}(
+            id=uuid4(),
+{{ entity_arg_lines | join('\n') }}
+        )
+        return {% if async_mode == "async" %}await {% endif %}self._repository.add(entity)
